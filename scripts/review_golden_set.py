@@ -198,8 +198,11 @@ def check() -> int:
         print(f"duplicate id {dup}")
     total = max(len(items), 1)
     types = Counter(i["type"] for i in items)
-    hand = sum(i["origin"] == "hand" for i in items)
-    print(f"\n{len(items)} questions, {bad} invalid, {hand} hand-written ({hand / total:.0%})")
+    origins = Counter(i["origin"] for i in items)
+    reviewers = Counter(i.get("reviewer", "human") for i in items)
+    print(f"\n{len(items)} questions, {bad} invalid")
+    print("  origin:   " + ", ".join(f"{o} {n} ({n / total:.0%})" for o, n in origins.items()))
+    print("  reviewer: " + ", ".join(f"{r} {n}" for r, n in reviewers.items()))
     for t in TYPES:
         print(f"  {t:13} {types[t]:3}  ({types[t] / total:.0%})")
     return 1 if bad else 0

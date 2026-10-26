@@ -55,19 +55,39 @@ flowchart LR
 
 ## Results
 
-> **Pending.** The golden set (70 LLM-drafted questions plus ~25 hand-written ones, every one
-> reviewed by hand) is being reviewed. This table is filled only from `eval/run_eval.py` output,
-> never by hand.
+Golden set v1: **74 questions** over 27 documents (64 answerable: 16 exact-term, 18 paraphrase,
+22 numeric, 8 multi-hop; plus 10 unanswerable near-misses). 46 were drafted by llama3.1 and then
+reviewed against the source pages (43 needed edits, 24 more drafts were dropped); 28 were written
+from the page text. **All review so far was done by Claude, not yet by a human**: see
+`reviewer` in [golden_set.jsonl](eval/golden_set.jsonl). Numbers are copied from
+`eval/results/` reports, never typed by hand.
 
-| Mode | Recall@5 | MRR | nDCG@10 | Citation acc. | p95 latency |
+Retrieval, 64 answerable questions, top 10 ([report](eval/results/20261026-1708-v1-fast.md)):
+
+| Mode | Recall@5 | Recall@10 | MRR | nDCG@10 | p95 retrieval |
 |---|---|---|---|---|---|
-| Vector only | | | | | |
-| BM25 only | | | | | |
-| Hybrid (RRF) | | | | | |
-| Hybrid + rerank | | | | | |
+| Vector only (bge-small) | 0.625 | 0.750 | 0.499 | 0.551 | 86 ms |
+| **BM25 only** | **0.859** | **0.914** | **0.665** | **0.721** | 140 ms |
+| Hybrid (RRF, k=60) | 0.789 | 0.844 | 0.631 | 0.679 | 202 ms |
+| Hybrid + rerank | _running_ | | | | |
 
-Broken down by question type (exact_term, paraphrase, numeric, multi_hop, unanswerable) in each
-report under `eval/results/`.
+Recall@5 by question type:
+
+| Mode | exact_term (16) | paraphrase (18) | numeric (22) | multi_hop (8) |
+|---|---|---|---|---|
+| Vector only | 0.750 | 0.500 | 0.727 | 0.375 |
+| BM25 only | **1.000** | **0.722** | **0.955** | **0.625** |
+| Hybrid (RRF, k=60) | 0.875 | 0.667 | 0.909 | 0.562 |
+
+**What this shows, honestly:** on this corpus and question set, BM25 beats dense retrieval on
+every question type, including paraphrases, and RRF fusion with the weaker dense list pulls BM25
+*down*. The RRF sweep (k 5 to 60 x depth 10 to 30) improves hybrid only to Recall@5 0.820 (k=5,
+depth 20), still below BM25. Why the dense side is weak (from the per-question CSVs): for Budget
+questions its top hits are number tables from Budget at a Glance and the Receipt Budget rather
+than the speech paragraph with the answer; every chunk is embedded with its document title, so a
+question mentioning "Budget 2026-27" is close to all of them, and table chunks that are mostly
+digits sit near any finance question. Caveats: 64 questions means roughly +/-5 points of noise
+per figure, and questions drafted from passages share wording with them, which favours BM25.
 
 **How it's measured** ([metrics.py](eval/metrics.py)): relevance is labelled as `(document,
 pages)`, not chunk ids, so the same golden set scores any chunk size. A retrieved chunk counts if
@@ -203,7 +223,10 @@ never parses PDFs. LLM API keys go in the Space's secrets, never in the repo.
 
 ## What's next
 
-Query rewriting and HyDE for short questions; RAGAS faithfulness with a stronger judge model;
+Experiments the v1 eval points to (run each on a held-out split so the golden set isn't tuned on):
+embed chunks without the document-title prefix; keep number-only table chunks out of the dense
+index (BM25 still covers them); a non-quantized or larger embedder (bge-base); weighted RRF that
+trusts BM25 more. Then: query rewriting and HyDE for short questions; RAGAS faithfulness with a stronger judge model;
 reading charts with a vision model; a fine-tuned or long-context embedder (bge-m3) to test larger
 chunks; Hindi documents with a multilingual embedder; Qdrant sparse vectors to keep both indexes
 in one database.
