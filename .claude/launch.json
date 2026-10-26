@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uv", "run", "uvicorn", "hybrid_rag.api.main:app", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "ui",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uv", "run", "streamlit", "run", "ui/app.py", "--server.port", "8501", "--server.headless", "true"],
+      "port": 8501
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+# Local dev: `docker compose up --build app` serves the UI on http://localhost:7860 and the API on
+# http://localhost:8000/docs, using the embedded Qdrant store baked into the image.
+# `qdrant` is optional: start it and set QDRANT_URL=http://qdrant:6333 to use a Qdrant server.
+services:
+  app:
+    build: .
+    ports:
+      - "7860:7860"
+      - "8000:8000"
+    env_file: .env
+    environment:
+      # Reach an Ollama running on the host machine (the default LLM provider).
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    ports:
+      - "6333:6333" # REST + dashboard at http://localhost:6333/dashboard
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    profiles: ["server"] # only with: docker compose --profile server up
+
+volumes:
+  qdrant_data:
