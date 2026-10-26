@@ -31,7 +31,7 @@ def build(only: str | None = None) -> None:
         t0 = time.perf_counter()
         vectors = embed.embed_passages([embed.passage_text(c) for c in chunks])
         log.info("vectors: embedded %d chunks in %.0fs", len(chunks), time.perf_counter() - t0)
-        vector_store.recreate(chunks, vectors)
+        vector_store.sync(chunks, vectors)
         log.info("vectors: indexed into Qdrant collection %r", settings.qdrant_collection)
 
 

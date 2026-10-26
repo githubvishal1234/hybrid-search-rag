@@ -23,7 +23,7 @@ from tokenizers import Tokenizer
 from hybrid_rag.config import settings
 from hybrid_rag.ingestion.chunk import chunk_document
 from hybrid_rag.ingestion.clean import clean_document
-from hybrid_rag.ingestion.parse import Page, parse_pdf
+from hybrid_rag.ingestion.parse import Page, ocr_available, parse_pdf
 
 DOC_FIELDS = ("doc_id", "file_name", "title", "publisher", "date", "source_url")
 
@@ -44,14 +44,16 @@ def parse_cached(pdf: Path) -> list[Page]:
     digest = sha256(pdf)
     if cache.exists():
         data = json.loads(cache.read_text(encoding="utf-8"))
-        if data["sha256"] == digest:
+        # A parse made without Tesseract is redone once Tesseract is installed, so scanned
+        # pages get their text; otherwise the cache would hide them forever.
+        if data["sha256"] == digest and (data.get("ocr", False) or not ocr_available()):
             return [Page(**p) for p in data["pages"]]
 
     t0 = time.perf_counter()
     pages = parse_pdf(pdf)
     log.info("  parsed %s in %.1fs", pdf.name, time.perf_counter() - t0)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"sha256": digest, "pages": [asdict(p) for p in pages]}
+    payload = {"sha256": digest, "ocr": ocr_available(), "pages": [asdict(p) for p in pages]}
     cache.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return pages
 

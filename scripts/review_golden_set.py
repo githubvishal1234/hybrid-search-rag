@@ -107,7 +107,7 @@ def edit(item: dict) -> dict:
     return item
 
 
-def show(item: dict, chunks: dict[str, dict]) -> None:
+def show(item: dict, page_text: dict[tuple[str, int], str]) -> None:
     print("\n" + "=" * 100)
     print(f"{item['id']}  [{item['type']}]")
     print(f"Q: {item['question']}")
@@ -115,10 +115,12 @@ def show(item: dict, chunks: dict[str, dict]) -> None:
     for r in item["relevant"]:
         pdf = settings.raw_dir / r["doc"]
         print(f"   {r['doc']} pages {r['pages']}   {pdf.as_uri()}#page={r['pages'][0]}")
-    for cid in item.get("source_chunks", []):
-        c = chunks[cid]
-        print(f"\n--- source {cid} (p.{c['page_start']}-{c['page_end']}) ---")
-        print(c["text"][:1500] + (" [...]" if len(c["text"]) > 1500 else ""))
+    # Show the labelled pages, not the source chunks: chunk ids change whenever chunking does,
+    # pages don't (same reason the labels are pages).
+    for r in item["relevant"]:
+        text = "\n".join(page_text.get((r["doc"], p), "") for p in r["pages"])
+        print(f"\n--- {r['doc']} p.{','.join(map(str, r['pages']))} ---")
+        print(text[:1500] + (" [...]" if len(text) > 1500 else ""))
     if item["type"] == "unanswerable":
         from hybrid_rag.retrieval.retriever import retrieve  # loads models; only needed here
 
@@ -128,18 +130,18 @@ def show(item: dict, chunks: dict[str, dict]) -> None:
 
 
 def review() -> None:
-    chunks = {}
-    with (settings.processed_dir / "chunks.jsonl").open(encoding="utf-8") as f:
+    page_text = {}
+    with (settings.processed_dir / "pages.jsonl").open(encoding="utf-8") as f:
         for line in f:
-            c = json.loads(line)
-            chunks[c["chunk_id"]] = c
+            r = json.loads(line)
+            page_text[(r["file_name"], r["page"])] = r["text"]
     pages = kept_pages()
     done = {d["id"] for d in read_jsonl(GOLDEN_PATH) + read_jsonl(DROPPED_PATH)}
     todo = [d for d in read_jsonl(DRAFT_PATH) if d["id"] not in done]
     print(f"{len(todo)} drafts to review ({len(done)} already done)")
 
     for n, item in enumerate(todo, start=1):
-        show(item, chunks)
+        show(item, page_text)
         while True:
             choice = ask(f"\n({n}/{len(todo)}) [k]eep  [e]dit  [d]rop  [q]uit", "").lower()
             if choice == "q":

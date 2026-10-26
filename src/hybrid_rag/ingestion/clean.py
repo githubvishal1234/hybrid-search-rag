@@ -31,12 +31,28 @@ def is_table(block: str) -> bool:
     return block.lstrip().startswith("|")
 
 
+def dedupe_cells(row: str) -> str:
+    """Undo merged-cell copies: to_markdown() repeats a merged cell's text in every column it
+    spans ("|NH-703 road|NH-703 road|... x20"). Collapse runs of identical text or empty cells,
+    and blank the "Col7" placeholders it invents for missing headers. Identical adjacent
+    NUMBERS are kept: "|4652867|4652867|" can be two real columns (e.g. BE = RE)."""
+    out: list[str] = []
+    for cell in row.split("|"):
+        cell = "" if re.fullmatch(r"Col\d+", cell.strip()) else cell.strip()
+        is_text = not cell or any(c.isalpha() for c in cell)
+        if out and is_text and cell == out[-1]:
+            continue
+        out.append(cell)
+    return "|".join(out)
+
+
 def clean_table(block: str) -> str:
     rows = []
     for ln in block.splitlines():
         ln = ln.replace("-<br>", "-").replace("<br>", " ")  # <br> = line break inside a cell
         ln = DEVANAGARI.sub("", ln)  # bilingual cells: keep the English half
         ln = re.sub(r"[ \t]+", " ", MD_EMPHASIS.sub("", ln)).strip()
+        ln = dedupe_cells(ln)
         if ln.strip("| -") or "---" in ln:  # drop rows left with only empty cells
             rows.append(ln)
     return "\n".join(rows) if any(r.strip("| -") for r in rows) else ""

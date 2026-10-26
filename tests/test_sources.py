@@ -12,6 +12,7 @@ def test_sources_csv_is_well_formed():
     names = [r["file_name"] for r in rows]
     assert len(names) == len(set(names)), "duplicate file_name would overwrite a PDF"
     for r in rows:
+        assert None not in r, f"extra columns (unquoted comma?) in {r['file_name']}"
         assert r["file_name"].endswith(".pdf"), r["file_name"]
         assert r["source_url"].startswith("https://"), r["source_url"]
         assert r["publisher"], r["file_name"]

@@ -8,6 +8,7 @@ Pages with almost no text but an embedded image are likely scans and go through 
 
 import logging
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 
 import pymupdf
@@ -15,7 +16,17 @@ import pymupdf
 from hybrid_rag.config import settings
 
 log = logging.getLogger(__name__)
-_ocr_unavailable = False  # set once Tesseract is found missing, so we warn a single time
+
+
+@cache
+def ocr_available() -> bool:
+    """Tesseract + language data installed? (winget install UB-Mannheim.TesseractOCR)"""
+    try:
+        pymupdf.get_tessdata()
+    except RuntimeError:
+        log.warning("Tesseract not found: image-only pages will have no text")
+        return False
+    return True
 
 
 @dataclass
@@ -34,15 +45,9 @@ def _inside(block_bbox, table_bbox) -> bool:
 
 
 def _ocr_text(page: pymupdf.Page) -> str | None:
-    global _ocr_unavailable
-    if _ocr_unavailable:
+    if not ocr_available():
         return None
-    try:
-        tp = page.get_textpage_ocr(dpi=settings.ocr_dpi, full=True)
-    except RuntimeError as e:  # PyMuPDF raises this when Tesseract / tessdata isn't installed
-        _ocr_unavailable = True
-        log.warning("OCR skipped, Tesseract not available: %s", e)
-        return None
+    tp = page.get_textpage_ocr(dpi=settings.ocr_dpi, full=True)
     return page.get_text(textpage=tp)
 
 

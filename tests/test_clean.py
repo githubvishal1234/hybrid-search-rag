@@ -26,7 +26,7 @@ def test_clean_block_drops_chart_label_soup():
 
 def test_clean_table_strips_markdown_artifacts_and_hindi():
     table = "|Item|**2024-25**<br>**वास्तविक**|\n|---|---|\n|(_a_) Revenue<br>Receipts|3036619|"
-    assert clean_block(table) == "|Item|2024-25 |\n|---|---|\n|(a) Revenue Receipts|3036619|"
+    assert clean_block(table) == "|Item|2024-25|\n|---|---|\n|(a) Revenue Receipts|3036619|"
 
 
 def test_clean_document_removes_running_headers_and_page_numbers():
@@ -38,3 +38,12 @@ def test_clean_document_removes_running_headers_and_page_numbers():
     cleaned = clean_document(pages)
     assert len(cleaned) == 10  # page count preserved, so page numbers stay correct
     assert cleaned[4] == ["Clause on epsilon."]
+
+
+def test_dedupe_cells_collapses_merged_cell_copies_but_keeps_numbers():
+    from hybrid_rag.ingestion.clean import dedupe_cells
+
+    merged = "|241|NH-703 road near Moga|NH-703 road near Moga|NH-703 road near Moga|12.5|"
+    assert dedupe_cells(merged) == "|241|NH-703 road near Moga|12.5|"
+    assert dedupe_cells("|Col1|Item|Col3|Col4|2025-26|") == "|Item||2025-26|"
+    assert dedupe_cells("|Total Receipts|4652867|4652867|") == "|Total Receipts|4652867|4652867|"
