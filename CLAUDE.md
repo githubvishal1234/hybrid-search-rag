@@ -236,7 +236,8 @@ Also break results down by question type. Showing "BM25 wins on exact_term, vect
 9. Tech stack badges, license.
 
 ## 9. Deployment
-Decided: **Hugging Face Spaces (Docker, free CPU, 16 GB RAM)** running FastAPI + Streamlit in one container, plus **Qdrant Cloud free tier** (1 GB). Render/Railway free tiers (~512 MB RAM) can't hold torch + bge models + reranker.
+Decided: **Hugging Face Spaces (Docker, free CPU, 16 GB RAM)** running FastAPI + Streamlit in one container. Render/Railway free tiers (~512 MB RAM) can't hold the bge models + reranker.
+- Built: `scripts/deploy_space.py` stages tracked code + prebuilt indexes (~26 MB: chunks.jsonl, bm25.pkl, embedded Qdrant store) and uploads with `huggingface_hub` (`--dry-run` lists files; `--var` sets non-secret Space variables and refuses anything named *KEY*/*TOKEN*). The embedded Qdrant store ships inside the image, so Qdrant Cloud is optional (set `QDRANT_URL`), not required.
 - Reranker latency is the deployment bottleneck: bge-reranker-base measured ~15 s for 30 × ~470-token pairs on CPU (not the ~0.3–1 s often quoted for short passages). For the public demo use Cohere Rerank, a faster local model, or fewer `RERANK_CANDIDATES`; pick using the eval's latency column.
 - Pre-ingest the corpus locally and push vectors to Qdrant Cloud, so the deployed app doesn't need to parse PDFs at boot.
 - Add a simple rate limit and keep API keys in environment secrets.
