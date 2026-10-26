@@ -1,0 +1,4 @@
+# Files that run inside the Linux container must keep LF endings, even in a Windows checkout
+# with core.autocrlf=true; a CRLF start.sh fails in sh with "\r: not found".
+*.sh text eol=lf
+Dockerfile text eol=lf
