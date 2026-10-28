@@ -10,3 +10,9 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 *.pkl
+
+# Prebuilt indexes ship in the repo for Streamlit Community Cloud (no build step there).
+!data/processed/chunks.jsonl
+!data/processed/bm25.pkl
+!data/processed/qdrant/
+data/processed/qdrant/.lock

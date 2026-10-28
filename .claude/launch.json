@@ -4,14 +4,53 @@
     {
       "name": "api",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "uv", "run", "uvicorn", "hybrid_rag.api.main:app", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "uv",
+        "run",
+        "uvicorn",
+        "hybrid_rag.api.main:app",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "ui",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "uv", "run", "streamlit", "run", "ui/app.py", "--server.port", "8501", "--server.headless", "true"],
+      "runtimeArgs": [
+        "-m",
+        "uv",
+        "run",
+        "streamlit",
+        "run",
+        "ui/app.py",
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true"
+      ],
       "port": 8501
+    },
+    {
+      "name": "ui-standalone",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "uv",
+        "run",
+        "streamlit",
+        "run",
+        "ui/app.py",
+        "--server.port",
+        "8502",
+        "--server.headless",
+        "true"
+      ],
+      "env": {
+        "API_URL": ""
+      },
+      "port": 8502
     }
   ]
 }

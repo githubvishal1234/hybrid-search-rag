@@ -4,7 +4,7 @@
     uv run python scripts/deploy_space.py --space you/hybrid-rag \
         --var LLM_PROVIDER=gemini --var LLM_MODEL=<model> --var RERANK_CANDIDATES=15
 
-Needs a write token: `huggingface-cli login` or HF_TOKEN in the environment.
+Needs a write token: `hf auth login` or HF_TOKEN in the environment.
 API keys are NOT uploaded by this script: add them in the Space under
 Settings -> Variables and secrets (e.g. GEMINI_API_KEY) so they never touch the repo.
 

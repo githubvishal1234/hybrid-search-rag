@@ -7,7 +7,7 @@ with **semantic search (vectors)**, merges them with **Reciprocal Rank Fusion**,
 **cross-encoder**, and answers with a **citation to the document and page** for every claim, or
 says it couldn't find the answer. Every retrieval choice is measured on a hand-reviewed golden set.
 
-**Live demo:** _coming soon (Hugging Face Spaces)_ · **2-minute walkthrough:** _coming soon_
+**Live demo:** _coming soon (Streamlit Community Cloud)_ · **2-minute walkthrough:** _coming soon_
 
 ## The problem: why plain vector RAG struggles here
 
@@ -302,7 +302,24 @@ uv run python scripts/deploy_space.py --space <you>/hybrid-rag --var LLM_PROVIDE
 
 One image runs the API and the Streamlit UI (`scripts/start.sh`); the embedding and reranker
 models are downloaded at build time, and the prebuilt indexes are copied in, so the container
-never parses PDFs. LLM API keys go in the Space's secrets, never in the repo.
+never parses PDFs. LLM API keys go in the Space's secrets, never in the repo. (Docker Spaces
+now need a Hugging Face PRO plan, so the public demo runs on Streamlit Community Cloud instead.)
+
+**Streamlit Community Cloud (free, the live demo).** With `API_URL` empty the UI runs retrieval
+and generation in its own process, so no FastAPI server is needed. The prebuilt indexes
+(`chunks.jsonl`, `bm25.pkl`, the embedded Qdrant store, ~66 MB) are committed for this, and
+Community Cloud installs dependencies from `uv.lock`. Deploy from share.streamlit.io: repo
+`main`, entrypoint `ui/app.py`, Python 3.11, and these secrets (root-level secrets become
+environment variables, which `config.py` reads):
+
+```toml
+API_URL = ""
+LLM_PROVIDER = "gemini"
+LLM_MODEL = "gemini-3.6-flash"
+GEMINI_API_KEY = "..."
+RERANKER_MODEL = "jinaai/jina-reranker-v1-turbo-en"  # ~4x faster, smaller; fits shared CPU/RAM
+RERANK_CANDIDATES = "10"
+```
 
 ## Failure cases found so far
 
