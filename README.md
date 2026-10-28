@@ -9,7 +9,7 @@ says it couldn't find the answer. Every retrieval choice is measured on a review
 
 **Live demo:** [hybrid-rag-finance.streamlit.app](https://hybrid-rag-finance.streamlit.app/) (Streamlit Community Cloud; first load after idle takes ~1 min) · **2-minute walkthrough:** _coming soon_
 
-**Docs:** [Runbook: setup, API keys, running, eval, deploy, troubleshooting](docs/RUNBOOK.md) · [Interview prep](docs/INTERVIEW_PREP.md) · [Resume bullets and LinkedIn post](docs/launch_posts.md)
+**Docs:** [Runbook: setup, API keys, running, eval, deploy, troubleshooting](docs/RUNBOOK.md) · [Business requirements (BRD)](docs/BRD.md) · [Functional requirements (FRD)](docs/FRD.md) · [Interview prep](docs/INTERVIEW_PREP.md) · [Resume bullets and LinkedIn post](docs/launch_posts.md)
 
 ## The problem: why plain vector RAG struggles here
 
