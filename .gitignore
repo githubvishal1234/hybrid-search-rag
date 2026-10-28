@@ -16,3 +16,6 @@ data/processed/*
 !data/processed/bm25.pkl
 !data/processed/qdrant/
 data/processed/qdrant/.lock
+
+# Word/Office lock files while a document is open
+~$*
