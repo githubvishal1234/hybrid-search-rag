@@ -7,7 +7,7 @@ with **semantic search (vectors)**, merges them with **Reciprocal Rank Fusion**,
 **cross-encoder**, and answers with a **citation to the document and page** for every claim, or
 says it couldn't find the answer. Every retrieval choice is measured on a hand-reviewed golden set.
 
-**Live demo:** _coming soon (Streamlit Community Cloud)_ · **2-minute walkthrough:** _coming soon_
+**Live demo:** [hybrid-rag-finance.streamlit.app](https://hybrid-rag-finance.streamlit.app/) (Streamlit Community Cloud; first load after idle takes ~1 min) · **2-minute walkthrough:** _coming soon_
 
 ## The problem: why plain vector RAG struggles here
 
