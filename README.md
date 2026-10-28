@@ -5,9 +5,11 @@
 Question answering over SEBI, Union Budget and IRDAI PDFs that combines **keyword search (BM25)**
 with **semantic search (vectors)**, merges them with **Reciprocal Rank Fusion**, re-scores with a
 **cross-encoder**, and answers with a **citation to the document and page** for every claim, or
-says it couldn't find the answer. Every retrieval choice is measured on a hand-reviewed golden set.
+says it couldn't find the answer. Every retrieval choice is measured on a reviewed golden set.
 
 **Live demo:** [hybrid-rag-finance.streamlit.app](https://hybrid-rag-finance.streamlit.app/) (Streamlit Community Cloud; first load after idle takes ~1 min) · **2-minute walkthrough:** _coming soon_
+
+**Docs:** [Runbook: setup, API keys, running, eval, deploy, troubleshooting](docs/RUNBOOK.md) · [Interview prep](docs/INTERVIEW_PREP.md) · [Resume bullets and LinkedIn post](docs/launch_posts.md)
 
 ## The problem: why plain vector RAG struggles here
 
