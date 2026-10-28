@@ -62,39 +62,133 @@ from the page text. **All review so far was done by Claude, not yet by a human**
 `reviewer` in [golden_set.jsonl](eval/golden_set.jsonl). Numbers are copied from
 `eval/results/` reports, never typed by hand.
 
-Retrieval, 64 answerable questions, top 10 ([report](eval/results/20261026-1708-v1-fast.md)):
+### Before / after, current settings
+
+Shipped configuration: bge-small embeddings, BM25 with the finance tokenizer, weighted RRF (k=10,
+BM25 x2, chosen on the dev half), bge-reranker-base on the top 30, llama3.1 answering from the top
+5 chunks. Retrieval on the 64 answerable questions
+([report](eval/results/20261028-0100-v1-final-retrieval.md)); answers on all 74
+([report](eval/results/20261027-1925-v1-generation.md),
+[faithfulness](eval/results/20261027-1925-v1-generation-faithfulness.md)):
+
+| Mode | Recall@5 | MRR | Faithfulness* | Citation acc. | p95 retrieval | p95 end-to-end |
+|---|---|---|---|---|---|---|
+| Vector only | 0.625 | 0.499 | 0.917 | 0.774 | 34 ms | 82 s |
+| BM25 only | 0.859 | 0.665 | 0.915 | 0.793 | 47 ms | 65 s |
+| Hybrid (weighted RRF) | 0.836 | 0.683 | **0.920** | **0.828** | 79 ms | 73 s |
+| **Hybrid + rerank** | **0.867** | **0.707** | 0.916 | 0.754 | 14.3 s | 93 s |
+
+**Headline:** hybrid + rerank lifts Recall@5 from 0.625 to 0.867 (+24 points) and MRR from 0.499
+to 0.707 over vector-only RAG. Against BM25 alone, the gain is in ranking (MRR +0.04) rather than
+recall (+0.008, within noise), and it costs ~14 s of CPU reranking per query. The best-cited
+answers come from plain weighted hybrid, which is also ~180x faster to retrieve than reranking.
+Hybrid's numbers include the dev half its fusion weights were tuned on; on the untouched test
+half alone (below) it trails BM25's Recall@5 slightly.
+
+\* Faithfulness = share of an answer's claims supported by the context it was given, judged by
+llama3.1 grading its own answers (no independent judge key was available). 219 of 233 answered
+questions were scored; 102 of 836 claims (12%) were flagged unsupported, and the flagged ones I
+spot-checked were genuine (e.g. an answer attributing a section 478 penalty to section 276C). The
+score is flat across modes, which most likely means a self-grading 8B judge isn't sensitive
+enough to separate them, not that the modes are equally faithful. Re-run `eval/judge.py` with
+`JUDGE_PROVIDER`/`JUDGE_MODEL` set to a stronger model for a trustworthy comparison.
+
+### Retrieval detail with the plan's default fusion (RRF k=60, equal weights)
+
+Retrieval, 64 answerable questions, top 10 ([report](eval/results/20261026-1705-v1-retrieval.md)):
 
 | Mode | Recall@5 | Recall@10 | MRR | nDCG@10 | p95 retrieval |
 |---|---|---|---|---|---|
-| Vector only (bge-small) | 0.625 | 0.750 | 0.499 | 0.551 | 86 ms |
-| **BM25 only** | **0.859** | **0.914** | **0.665** | **0.721** | 140 ms |
-| Hybrid (RRF, k=60) | 0.789 | 0.844 | 0.631 | 0.679 | 202 ms |
-| Hybrid + rerank | _running_ | | | | |
+| Vector only (bge-small) | 0.625 | 0.750 | 0.499 | 0.551 | 42 ms |
+| BM25 only | 0.859 | 0.914 | 0.665 | 0.721 | 66 ms |
+| Hybrid (RRF, k=60) | 0.789 | 0.844 | 0.631 | 0.679 | 116 ms |
+| **Hybrid + rerank** (bge-reranker-base, top 30) | **0.867** | **0.922** | **0.708** | **0.748** | 21.9 s (laptop CPU) |
 
 Recall@5 by question type:
 
 | Mode | exact_term (16) | paraphrase (18) | numeric (22) | multi_hop (8) |
 |---|---|---|---|---|
 | Vector only | 0.750 | 0.500 | 0.727 | 0.375 |
-| BM25 only | **1.000** | **0.722** | **0.955** | **0.625** |
+| BM25 only | **1.000** | 0.722 | **0.955** | **0.625** |
 | Hybrid (RRF, k=60) | 0.875 | 0.667 | 0.909 | 0.562 |
+| Hybrid + rerank | **1.000** | **0.889** | 0.864 | 0.562 |
 
-**What this shows, honestly:** on this corpus and question set, BM25 beats dense retrieval on
+**What this shows, honestly:** the cross-encoder is what makes hybrid search pay off. Plain RRF
+fusion lands *below* BM25, and reranking its top 30 lifts the result past BM25: about the same
+Recall@5 (0.867 vs 0.859, within noise) but clearly better ranking (MRR 0.708 vs 0.665), driven
+by paraphrase questions (Recall@5 0.889 vs 0.722). It costs on numeric questions (0.864 vs
+0.955: the reranker demotes table chunks) and about 20 s of CPU per query. On their own, BM25 beats dense retrieval on
 every question type, including paraphrases, and RRF fusion with the weaker dense list pulls BM25
 *down*. The RRF sweep (k 5 to 60 x depth 10 to 30) improves hybrid only to Recall@5 0.820 (k=5,
-depth 20), still below BM25. Why the dense side is weak (from the per-question CSVs): for Budget
-questions its top hits are number tables from Budget at a Glance and the Receipt Budget rather
-than the speech paragraph with the answer; every chunk is embedded with its document title, so a
-question mentioning "Budget 2026-27" is close to all of them, and table chunks that are mostly
-digits sit near any finance question. Caveats: 64 questions means roughly +/-5 points of noise
-per figure, and questions drafted from passages share wording with them, which favours BM25.
+depth 20), still below BM25. Why the dense side is weak (from the per-question CSVs): for some
+Budget questions its top hits are number tables from Budget at a Glance and the Receipt Budget
+rather than the speech paragraph with the answer. Caveats: 64 questions means roughly +/-5 points
+of noise per figure, and questions drafted from passages share wording with them, which favours
+BM25.
+
+**Testing that diagnosis** ([experiment reports and scripts](eval/results/experiments/), dev
+half): two fixes it suggested both failed. Keeping number-only chunks (letter ratio < 0.3 or < 0.4,
+4-8% of chunks, mostly Receipt Budget tables) out of the vector index changed no dev metric at all.
+Embedding chunks without the document title (section heading + text only) made things worse:
+vector Recall@5 0.688 -> 0.625, hybrid 0.844 -> 0.828, MRR 0.720 -> 0.689. The title prefix costs
+a few Budget questions but anchors many more, so it stays. Neither change was adopted.
+
+### Answers (generation), all 74 questions
+
+llama3.1 (local, via Ollama) answers each question from the top 5 chunks of each mode
+([report](eval/results/20261027-1925-v1-generation.md)). Citation accuracy = share of answered,
+answerable questions with at least one citation on a labelled page; refusal accuracy = share of the
+10 unanswerable questions refused; false refusals = answerable questions it refused.
+
+| Mode | Citation acc. | Refusal acc. | False refusals | p50 / p95 total latency |
+|---|---|---|---|---|
+| Vector only | 0.774 | **1.000** | 0.172 | 41 s / 82 s |
+| BM25 only | 0.793 | 0.900 | 0.094 | 41 s / 65 s |
+| **Hybrid (weighted RRF)** | **0.828** | 0.900 | 0.094 | 41 s / 73 s |
+| Hybrid + rerank | 0.754 | 0.900 | **0.047** | 56 s / 93 s |
+
+Hybrid gives the best-cited answers. Reranking gives the LLM better context, so it refuses answerable
+questions least often (4.7%), but it answers more of the hard ones, and those carry more citation
+misses. Vector-only refuses every unanswerable question but also 17% of answerable ones: its weaker
+context makes the model cautious. Latency is dominated by the 8B model on a laptop GPU (~40 s); the
+reranker adds ~15 s. Faithfulness (claims supported by the answer's own context,
+[judge.py](eval/judge.py)) is in the table above; note it measures grounding, not correctness: an
+answer can faithfully repeat a wrong figure from a wrongly retrieved chunk (the judge marked a
+vector-mode answer of "20% of NAV" as supported because a chunk in its context said 20% about a
+different limit; the right answer is 10%).
+
+### Tuning fusion without fooling ourselves
+
+The table above uses the plan's default fusion (RRF k=60, both lists weighted equally), which
+lands below BM25. To tune it honestly, the golden set is split 50/50 into **dev** and **test**,
+stratified by question type (`run_eval.py --split`). Settings were chosen on dev only
+([dev sweep](eval/results/20261026-1732-v1-dev-sweep.md): 48 combinations of k, list depth and a
+BM25 weight) and then measured once on the untouched test half
+([test report](eval/results/20261026-1732-v1-test.md),
+[old-setting baseline](eval/results/20261026-1734-v1-test-equal-rrf.md)):
+
+| Test half, 32 answerable questions | Recall@5 | MRR |
+|---|---|---|
+| Vector only | 0.562 | 0.498 |
+| BM25 only | **0.875** | 0.633 |
+| Hybrid, RRF k=60, equal weights (plan default) | 0.766 | 0.610 |
+| Hybrid, weighted RRF k=10, BM25 x2 (chosen on dev, now the default) | 0.828 | 0.647 |
+| Hybrid + rerank (on the weighted fusion) | **0.875** | **0.677** |
+
+Weighting BM25's ranks 2x recovered most of what equal-weight fusion lost (+6 points Recall@5 on
+unseen questions) and gives slightly better ranking than BM25, but BM25 alone still has the best
+plain recall; on dev the two were tied, so part of that gain was dev noise (at 32 questions each
+figure moves about +/-6 points). The cross-encoder matches BM25's recall with the best ranking and
+got every test paraphrase question right, at ~16 s per query on a laptop CPU.
 
 **How it's measured** ([metrics.py](eval/metrics.py)): relevance is labelled as `(document,
 pages)`, not chunk ids, so the same golden set scores any chunk size. A retrieved chunk counts if
 its page span overlaps a labelled page. Recall@k = share of required passages in the top k (two
 for multi-hop questions); MRR = 1/rank of the first hit; nDCG@10 credits each passage once at the
 rank it first appears. Generation adds citation accuracy, refusal accuracy on unanswerable
-questions, false refusals, and p50/p95 latency per stage.
+questions, false refusals, and p50/p95 latency per stage. Faithfulness ([judge.py](eval/judge.py))
+has an LLM split each answer into claims and check every claim against the context that answer
+was given: the RAGAS idea without its LangChain dependency tree, with judge outputs cached.
 
 ## Design decisions and trade-offs
 
@@ -189,6 +283,8 @@ uv run python scripts/review_golden_set.py --add     # write ~30% of questions b
 uv run python scripts/review_golden_set.py --check   # validate labels against the corpus
 uv run python eval/run_eval.py --sweep               # retrieval, all 4 modes + RRF sweep
 uv run python eval/run_eval.py --generate            # + answers: citation / refusal accuracy
+uv run python eval/judge.py eval/results/<run>-generation.csv   # faithfulness (LLM judge)
+uv run python eval/run_eval.py --split dev --sweep  # tune on dev; then --split test to report
 ```
 
 Drafting guards against weak questions (numeric answers must contain a number, exact-term
@@ -223,10 +319,10 @@ never parses PDFs. LLM API keys go in the Space's secrets, never in the repo.
 
 ## What's next
 
-Experiments the v1 eval points to (run each on a held-out split so the golden set isn't tuned on):
-embed chunks without the document-title prefix; keep number-only table chunks out of the dense
-index (BM25 still covers them); a non-quantized or larger embedder (bge-base); weighted RRF that
-trusts BM25 more. Then: query rewriting and HyDE for short questions; RAGAS faithfulness with a stronger judge model;
+Experiments still open (tune on `--split dev`, report on `--split test`): a non-quantized or
+larger embedder (bge-base), since the dense side is the weak link; rerank fewer candidates or use
+Cohere to cut the ~16 s reranking cost; a bigger golden set so the test half is less noisy. Then:
+query rewriting and HyDE for short questions; RAGAS faithfulness with a stronger judge model;
 reading charts with a vision model; a fine-tuned or long-context embedder (bge-m3) to test larger
 chunks; Hindi documents with a multilingual embedder; Qdrant sparse vectors to keep both indexes
 in one database.

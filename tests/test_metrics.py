@@ -58,3 +58,61 @@ def test_percentile_nearest_rank():
     assert percentile([5, 1, 3, 2, 4], 50) == 3
     assert percentile(list(range(1, 101)), 95) == 95
     assert math.isnan(percentile([], 50))
+
+
+def test_split_is_stratified_disjoint_and_stable():
+    from run_eval import split
+
+    qs = [{"id": f"q{i}", "type": t} for i in range(10) for t in ("numeric", "paraphrase")]
+    dev, test = split(qs, "dev"), split(qs, "test")
+    assert {q["id"] for q in dev}.isdisjoint({q["id"] for q in test})
+    assert len(dev) + len(test) == len(qs)
+    assert sum(q["type"] == "numeric" for q in dev) == 5  # each type split evenly
+    assert split(qs, "dev") == dev and split(qs, "all") == qs
+
+
+def test_generation_resumes_after_a_crash(tmp_path, monkeypatch):
+    from run_eval import load_progress, run_generation
+
+    import hybrid_rag.generation.answer as answer_mod
+
+    asked = []
+
+    def fake_answer(question, mode):
+        asked.append((mode, question))
+        if question == "boom?":
+            raise RuntimeError("LLM down")
+        chunk = {"chunk_id": "a:0001"}
+        return {
+            "refused": False,
+            "uncited": False,
+            "citations": [],
+            "invalid_citations": [],
+            "latency_ms": {"total": 5},
+            "answer": f"answer to {question}",
+            "retrieval_debug": {"chunks": [chunk]},
+        }
+
+    monkeypatch.setattr(answer_mod, "answer", fake_answer)
+    qs = [
+        {"id": i, "question": f"{i}?", "type": "numeric", "expected_answer": "", "relevant": []}
+        for i in ("q1", "q2")
+    ] + [
+        {"id": "q3", "question": "boom?", "type": "numeric", "expected_answer": "", "relevant": []}
+    ]
+    progress = tmp_path / "run-generation.progress.jsonl"
+    # simulate a crash after q1 was answered in "bm25"
+    progress.write_text(
+        '{"mode": "bm25", "id": "q1", "type": "numeric", "answer": "saved earlier"}\n',
+        encoding="utf-8",
+    )
+
+    rows = run_generation(qs, ["bm25"], progress)
+
+    assert ("bm25", "q1?") not in asked  # already done: skipped
+    assert [r["id"] for r in rows] == ["q1", "q2", "q3"]
+    assert rows[0]["answer"] == "saved earlier"
+    assert "error" in rows[2]  # the failed call is reported...
+    saved = load_progress(progress)
+    assert set(saved) == {("bm25", "q1"), ("bm25", "q2")}  # ...but not saved, so it retries
+    assert saved[("bm25", "q2")]["context_ids"] == "a:0001"

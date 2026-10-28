@@ -9,20 +9,29 @@ them needs per-query tuning; ranks are on the same scale by construction.
 Why k = 60: it flattens the curve, so rank 1 (1/61) is not much more than rank 5 (1/65). A chunk
 that is decent in BOTH lists (e.g. ranks 3 and 4: 1/63 + 1/64 = 0.0315) beats one that is first
 in a single list (1/61 = 0.0164). That agreement bonus is the whole point of hybrid search.
+
+Weighted RRF multiplies each list's contribution by a weight: w_i / (k + rank_i(d)). Equal
+weights assume both retrievers are equally reliable; on our eval BM25 was much stronger than the
+dense retriever, so equal weights let the weaker list drag good BM25 hits down.
 """
 
 
-def rrf(ranked_lists: dict[str, list[dict]], k: int) -> list[dict]:
+def rrf(
+    ranked_lists: dict[str, list[dict]], k: int, weights: dict[str, float] | None = None
+) -> list[dict]:
     """ranked_lists: {"vector": [chunk, ...], "bm25": [chunk, ...]}, each best first.
+    weights: optional {"bm25": 2.0, ...}; lists not mentioned get weight 1.
 
     Returns one list, best first. Each chunk gets "score" (its RRF score) and "ranks", e.g.
     {"vector": 3, "bm25": 1}, so the debug panel can show why it was ranked where it is.
     Ties keep the order in which chunks were first seen.
     """
+    weights = weights or {}
     fused: dict[str, dict] = {}
     for name, hits in ranked_lists.items():
+        w = weights.get(name, 1.0)
         for rank, hit in enumerate(hits, start=1):
             entry = fused.setdefault(hit["chunk_id"], {**hit, "score": 0.0, "ranks": {}})
-            entry["score"] += 1 / (k + rank)
+            entry["score"] += w / (k + rank)
             entry["ranks"][name] = rank
     return sorted(fused.values(), key=lambda h: h["score"], reverse=True)

@@ -50,6 +50,8 @@ def test_hybrid_rerank_reranks_top_fused_candidates(monkeypatch):
     monkeypatch.setattr(retriever, "bm25_search", lambda q, k: [chunk("b"), chunk("c")])
     monkeypatch.setattr(retriever, "rerank", fake_rerank)
     monkeypatch.setattr(settings, "rerank_candidates", 2)
+    monkeypatch.setattr(settings, "rrf_k", 60)  # pin fusion: this test is about the hand-off
+    monkeypatch.setattr(settings, "rrf_bm25_weight", 1.0)
 
     out = retriever.retrieve("q", "hybrid_rerank", top_n=1)
     assert [c["chunk_id"] for c in seen["candidates"]] == ["b", "a"]  # only top-2 fused

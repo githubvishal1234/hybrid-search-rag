@@ -1,7 +1,8 @@
 """Compare retrieval modes on the golden set. Prints a report and saves it to eval/results/.
 
 uv run python eval/run_eval.py                       # retrieval metrics, all 4 modes
-uv run python eval/run_eval.py --sweep               # + RRF k x fusion depth sweep (hybrid)
+uv run python eval/run_eval.py --sweep               # + RRF k x depth x BM25-weight sweep
+uv run python eval/run_eval.py --split dev --sweep   # tune on the dev half; report on --split test
 uv run python eval/run_eval.py --generate --modes vector hybrid_rerank   # + LLM answers (slow)
 uv run python eval/run_eval.py --golden eval/golden_set.draft.jsonl --label drafts
 
@@ -11,6 +12,7 @@ Retrieval metrics are free and take minutes (the cross-encoder dominates), so tu
 
 import argparse
 import csv
+import hashlib
 import json
 import statistics
 import sys
@@ -43,6 +45,22 @@ METRICS = ("recall@5", "recall@10", "mrr", "ndcg@10")
 def load_golden(path: Path) -> list[dict]:
     with path.open(encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def split(questions: list[dict], which: str) -> list[dict]:
+    """Stratified, deterministic 50/50 dev/test split: within each question type, order by a hash
+    of the id and alternate. Choose settings on dev and report on test, so the reported numbers
+    aren't tuned on the questions that measure them."""
+    if which == "all":
+        return questions
+    by_type: dict[str, list[dict]] = defaultdict(list)
+    for q in questions:
+        by_type[q["type"]].append(q)
+    keep = set()
+    for group in by_type.values():
+        group.sort(key=lambda q: hashlib.md5(q["id"].encode()).hexdigest())
+        keep |= {q["id"] for i, q in enumerate(group) if (i % 2 == 0) == (which == "dev")}
+    return [q for q in questions if q["id"] in keep]
 
 
 def mean(xs) -> float:
@@ -82,22 +100,41 @@ def run_sweep(questions: list[dict]) -> list[dict]:
     out = []
     for depth in (10, 20, 30):
         for k in (5, 10, 20, 60):
-            recalls, rrs = [], []
-            for v, b, relevant in lists:
-                fused = rrf({"vector": v[:depth], "bm25": b[:depth]}, k)
-                recalls.append(recall_at(fused, relevant, 5))
-                rrs.append(reciprocal_rank(fused, relevant))
-            out.append({"depth": depth, "rrf_k": k, "recall@5": mean(recalls), "mrr": mean(rrs)})
-    return out
+            for w in (1.0, 1.5, 2.0, 3.0):
+                recalls, rrs = [], []
+                for v, b, relevant in lists:
+                    fused = rrf({"vector": v[:depth], "bm25": b[:depth]}, k, {"bm25": w})
+                    recalls.append(recall_at(fused, relevant, 5))
+                    rrs.append(reciprocal_rank(fused, relevant))
+                row = {"depth": depth, "rrf_k": k, "bm25_weight": w}
+                out.append(row | {"recall@5": mean(recalls), "mrr": mean(rrs)})
+    return sorted(out, key=lambda r: (r["recall@5"], r["mrr"]), reverse=True)
 
 
-def run_generation(questions: list[dict], modes: list[str]) -> list[dict]:
+def load_progress(path: Path) -> dict[tuple[str, str], dict]:
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as f:
+        return {(r["mode"], r["id"]): r for r in map(json.loads, f)}
+
+
+def run_generation(questions: list[dict], modes: list[str], progress: Path) -> list[dict]:
+    """Answers every question in every mode. Each answer is appended to `progress` as soon as it
+    exists, and a rerun with the same label skips answers already there, so a crash or reboot
+    during a multi-hour run loses at most one answer. Failed calls aren't saved, so they retry."""
     from hybrid_rag.generation.answer import answer  # needs the LLM; import only when asked
 
+    done = load_progress(progress)
+    if done:
+        print(f"  resuming: {len(done)} answers already in {progress.name}")
     rows = []
+    log = progress.open("a", encoding="utf-8")
     for mode in modes:
         for n, q in enumerate(questions, start=1):
             print(f"\r  {mode:14} {n}/{len(questions)}", end="", flush=True)
+            if (mode, q["id"]) in done:
+                rows.append(done[(mode, q["id"])])
+                continue
             try:
                 res = answer(q["question"], mode)
             except Exception as e:  # one failed call shouldn't sink a 2-hour run
@@ -118,9 +155,16 @@ def run_generation(questions: list[dict], modes: list[str]) -> list[dict]:
                     "total_ms": res["latency_ms"]["total"],
                     "answer": res["answer"],
                     "expected": q["expected_answer"],
+                    # the chunks the LLM was shown, so eval/judge.py can score faithfulness later
+                    "context_ids": "|".join(
+                        c["chunk_id"] for c in res["retrieval_debug"]["chunks"]
+                    ),
                 }
             )
+            log.write(json.dumps(rows[-1], ensure_ascii=False) + "\n")
+            log.flush()
         print()
+    log.close()
     return rows
 
 
@@ -128,17 +172,8 @@ def fmt(x: float) -> str:
     return "–" if x != x else f"{x:.3f}"  # x != x is True only for NaN (no questions)
 
 
-def report(golden: Path, questions, retr, sweep, gen, unreviewed: bool) -> str:
-    answerable = [q for q in questions if q["type"] != "unanswerable"]
-    lines = [f"# Eval run {datetime.now():%Y-%m-%d %H:%M}", ""]
-    if unreviewed:
-        lines += ["> **UNREVIEWED golden set: numbers are for debugging, not for the README.**", ""]
-    lines += [
-        f"- golden set: `{golden.name}`: {len(questions)} questions ({len(answerable)} answerable)",
-        f"- embedding `{settings.embedding_model}`, chunk_size {settings.chunk_size}, "
-        f"rrf_k {settings.rrf_k}, depth {settings.dense_top_k}/{settings.bm25_top_k}, "
-        f"reranker `{settings.reranker_provider}:{settings.reranker_model}` "
-        f"on top {settings.rerank_candidates}",
+def retrieval_tables(answerable: list[dict], retr: list[dict]) -> list[str]:
+    lines = [
         "",
         "## Retrieval (answerable questions, top 10)",
         "",
@@ -161,14 +196,32 @@ def report(golden: Path, questions, retr, sweep, gen, unreviewed: bool) -> str:
     for mode, rows in by_mode.items():
         cells = [fmt(mean(r["recall@5"] for r in rows if r["type"] == t)) for t in TYPES]
         lines.append(f"| {mode} | {' | '.join(cells)} |")
+    return lines
+
+
+def report(golden: Path, questions, retr, sweep, gen, unreviewed: bool, split: str) -> str:
+    answerable = [q for q in questions if q["type"] != "unanswerable"]
+    lines = [f"# Eval run {datetime.now():%Y-%m-%d %H:%M}", ""]
+    if unreviewed:
+        lines += ["> **UNREVIEWED golden set: numbers are for debugging, not for the README.**", ""]
+    lines += [
+        f"- golden set: `{golden.name}` (split: {split}): {len(questions)} questions "
+        f"({len(answerable)} answerable)",
+        f"- embedding `{settings.embedding_model}`, chunk_size {settings.chunk_size}, "
+        f"rrf_k {settings.rrf_k}, BM25 weight {settings.rrf_bm25_weight}, "
+        f"depth {settings.dense_top_k}/{settings.bm25_top_k}, "
+        f"reranker `{settings.reranker_provider}:{settings.reranker_model}` "
+        f"on top {settings.rerank_candidates}",
+    ]
+    if retr:
+        lines += retrieval_tables(answerable, retr)
 
     if sweep:
-        lines += ["", "## RRF sweep (hybrid, no rerank)", "", "| depth | rrf_k | Recall@5 | MRR |"]
-        lines.append("|---|---|---|---|")
-        for s in sweep:
-            lines.append(
-                f"| {s['depth']} | {s['rrf_k']} | {fmt(s['recall@5'])} | {fmt(s['mrr'])} |"
-            )
+        lines += ["", "## RRF sweep (hybrid, no rerank; best first, top 12)", ""]
+        lines += ["| depth | rrf_k | BM25 weight | Recall@5 | MRR |", "|---|---|---|---|---|"]
+        for s in sweep[:12]:
+            cells = [s["depth"], s["rrf_k"], s["bm25_weight"], fmt(s["recall@5"]), fmt(s["mrr"])]
+            lines.append("| " + " | ".join(map(str, cells)) + " |")
 
     if gen:
         lines += [
@@ -177,8 +230,8 @@ def report(golden: Path, questions, retr, sweep, gen, unreviewed: bool) -> str:
             f"top {settings.context_top_n} chunks)",
             "",
             "Citation acc. = answered, answerable questions with at least one citation on a "
-            "relevant page. Refusal acc. = unanswerable questions refused. Faithfulness (RAGAS) "
-            "is not computed yet.",
+            "relevant page. Refusal acc. = unanswerable questions refused. Faithfulness: run "
+            "eval/judge.py on this run's -generation.csv.",
             "",
             "| Mode | Citation acc. | Refusal acc. | False refusals | Uncited | Errors "
             "| p50 ms | p95 ms |",
@@ -217,31 +270,42 @@ def main() -> int:
     p.add_argument("--modes", nargs="+", choices=MODES, default=list(MODES))
     p.add_argument("--sweep", action="store_true", help="also sweep rrf_k x fusion depth")
     p.add_argument("--generate", action="store_true", help="also generate answers (slow)")
+    p.add_argument("--no-retrieval", action="store_true", help="skip retrieval metrics")
     p.add_argument("--limit", type=int, help="only the first N questions (smoke test)")
+    p.add_argument("--split", choices=["all", "dev", "test"], default="all")
     p.add_argument("--label", default="run")
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
 
     questions = load_golden(args.golden)[: args.limit]
+    questions = split(questions, args.split)
     unreviewed = any(not q.get("reviewed") for q in questions)
     answerable = [q for q in questions if q["type"] != "unanswerable"]
-    print(f"{len(questions)} questions ({len(answerable)} answerable) from {args.golden}")
+    print(f"{len(questions)} questions ({len(answerable)} answerable, split {args.split})")
     if unreviewed:
         print("WARNING: golden set contains unreviewed drafts; don't report these numbers.")
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     stem = RESULTS / f"{datetime.now():%Y%m%d-%H%M}-{args.label}"
-    print("retrieval:")
-    retr = run_retrieval(answerable, args.modes)
-    write_csv(stem.with_name(stem.name + "-retrieval.csv"), retr)  # saved before anything else
+    retr = []
+    if not args.no_retrieval:
+        print("retrieval:")
+        retr = run_retrieval(answerable, args.modes)
+        write_csv(stem.with_name(stem.name + "-retrieval.csv"), retr)  # saved before anything else
     sweep = run_sweep(answerable) if args.sweep else []
     gen = []
     if args.generate:
         print("generation:")
-        gen = run_generation(questions, args.modes)
+        progress = RESULTS / f"{args.label}-generation.progress.jsonl"
+        gen = run_generation(questions, args.modes, progress)
         write_csv(stem.with_name(stem.name + "-generation.csv"), gen)
+        failed = sum("error" in r for r in gen)
+        if failed:  # keep the progress file: rerunning the same command retries only these
+            print(f"{failed} calls failed; rerun the same command to retry just those")
+        else:
+            progress.unlink()  # finished: the next run with this label starts fresh
 
-    text = report(args.golden, questions, retr, sweep, gen, unreviewed)
+    text = report(args.golden, questions, retr, sweep, gen, unreviewed, args.split)
     print("\n" + text)
     stem.with_suffix(".md").write_text(text, encoding="utf-8")
     print(f"saved {stem.relative_to(ROOT)}.md (+ per-question CSVs)")

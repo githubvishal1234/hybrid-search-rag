@@ -46,7 +46,11 @@ class Settings(BaseSettings):
     query_prefix: str = "Represent this sentence for searching relevant passages: "
     dense_top_k: int = 30
     bm25_top_k: int = 30
-    rrf_k: int = 60
+    # Chosen on the golden set's dev half (eval/results/*-v1-dev-sweep.md): k=60 with equal
+    # weights scored below BM25 alone; k=10 with BM25 weighted 2x matched BM25's Recall@5 with a
+    # better MRR. Reported on the untouched test half.
+    rrf_k: int = 10
+    rrf_bm25_weight: float = 2.0  # weighted RRF: >1 trusts BM25's ranks more than the vector list
     context_top_n: int = 5  # chunks given to the LLM (after reranking, when enabled)
 
     # Reranker. bge-reranker-base: best quality in Day 10 probes but ~15 s / 30 chunks on this
@@ -62,6 +66,10 @@ class Settings(BaseSettings):
     llm_provider: Literal["openai", "anthropic", "gemini", "ollama"] = "ollama"
     llm_model: str = "llama3.1"
     llm_max_tokens: int = 800
+    # Faithfulness judge for the eval (eval/judge.py). Empty = same as the answering LLM, which
+    # works but is biased (a model grading itself); prefer a stronger API model here.
+    judge_provider: Literal["openai", "anthropic", "gemini", "ollama"] | None = None
+    judge_model: str | None = None
 
     # API
     api_url: str = "http://localhost:8000"  # where the Streamlit UI finds the API

@@ -1,0 +1,18 @@
+# Eval run 2026-10-27 10:26
+
+- golden set: `golden_set.jsonl` (split: dev): 37 questions (32 answerable)
+- embedding `BAAI/bge-small-en-v1.5`, chunk_size 450, rrf_k 10, BM25 weight 2.0, depth 30/30, reranker `local:BAAI/bge-reranker-base` on top 30
+
+## Retrieval (answerable questions, top 10)
+
+| Mode | Recall@5 | Recall@10 | MRR | nDCG@10 | p50 ms | p95 ms |
+|---|---|---|---|---|---|---|
+| vector | 0.625 | 0.703 | 0.458 | 0.515 | 24 | 28 |
+| hybrid | 0.828 | 0.891 | 0.689 | 0.733 | 57 | 91 |
+
+## Recall@5 by question type
+
+| Mode | exact_term (n=8) | paraphrase (n=9) | numeric (n=11) | multi_hop (n=4) |
+|---|---|---|---|---|
+| vector | 1.000 | 0.444 | 0.636 | 0.250 |
+| hybrid | 1.000 | 0.667 | 1.000 | 0.375 |

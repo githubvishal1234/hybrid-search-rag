@@ -47,3 +47,15 @@ def test_retrieve_modes(monkeypatch):
     assert hybrid[0]["ranks"] == {"vector": 3, "bm25": 1}
     with pytest.raises(ValueError):
         retriever.retrieve("q", "keyword")
+
+
+def test_weighted_rrf_lets_the_stronger_list_win_over_mediocre_agreement():
+    # "meh" is 30th in both lists; "b1" is BM25's #1 and absent from the vector list.
+    vector = hits(*[f"v{i}" for i in range(1, 30)], "meh")
+    bm25 = hits("b1", *[f"x{i}" for i in range(2, 30)], "meh")
+    lists = {"vector": vector, "bm25": bm25}
+    equal = {h["chunk_id"]: h["score"] for h in rrf(lists, k=60)}
+    assert equal["meh"] > equal["b1"]  # 2/90 beats 1/61: the failure seen in the v1 eval
+    heavy = {h["chunk_id"]: h["score"] for h in rrf(lists, k=60, weights={"bm25": 3.0})}
+    assert heavy["b1"] == pytest.approx(3 / 61)
+    assert heavy["b1"] > heavy["meh"]  # 3/61 beats 1/90 + 3/90

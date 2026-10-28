@@ -1,4 +1,4 @@
-.PHONY: install data ingest index ask serve ui eval eval-full golden-draft golden-review golden-add golden-check qdrant qdrant-down lint test
+.PHONY: install data ingest index ask serve ui eval eval-dev eval-test eval-full judge golden-draft golden-review golden-add golden-check qdrant qdrant-down lint test
 
 install:
 	uv sync
@@ -26,6 +26,15 @@ eval:
 
 eval-full:
 	uv run python eval/run_eval.py --generate
+
+eval-dev:
+	uv run python eval/run_eval.py --split dev --sweep --label dev
+
+eval-test:
+	uv run python eval/run_eval.py --split test --label test
+
+judge:
+	uv run python eval/judge.py $(CSV)
 
 golden-draft:
 	uv run python scripts/build_golden_set.py

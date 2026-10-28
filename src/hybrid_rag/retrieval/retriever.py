@@ -39,7 +39,7 @@ def retrieve(query: str, mode: Mode = "hybrid", top_n: int | None = None) -> lis
         "vector": dense_search(query, settings.dense_top_k),
         "bm25": bm25_search(query, settings.bm25_top_k),
     }
-    fused = rrf(lists, settings.rrf_k)
+    fused = rrf(lists, settings.rrf_k, {"bm25": settings.rrf_bm25_weight})
     if mode == "hybrid":
         return fused[:top_n]
 
