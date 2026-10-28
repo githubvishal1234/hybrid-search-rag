@@ -84,7 +84,7 @@ with st.sidebar:
 
 st.title("Ask Indian finance regulations")
 st.caption(
-    "Answers come only from RBI, SEBI and Union Budget 2026-27 PDFs, with a citation to the "
+    "Answers come only from SEBI, Union Budget 2026-27 and IRDAI PDFs, with a citation to the "
     "document and page for every claim. If the documents don't say, it says so."
 )
 

@@ -2,7 +2,7 @@
 
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue) ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688) ![Qdrant](https://img.shields.io/badge/vectors-Qdrant-dc244c) ![BM25](https://img.shields.io/badge/keyword-BM25-555) ![Streamlit](https://img.shields.io/badge/UI-Streamlit-ff4b4b)
 
-Question answering over RBI, SEBI and Union Budget PDFs that combines **keyword search (BM25)**
+Question answering over SEBI, Union Budget and IRDAI PDFs that combines **keyword search (BM25)**
 with **semantic search (vectors)**, merges them with **Reciprocal Rank Fusion**, re-scores with a
 **cross-encoder**, and answers with a **citation to the document and page** for every claim, or
 says it couldn't find the answer. Every retrieval choice is measured on a hand-reviewed golden set.
@@ -28,7 +28,7 @@ the fusion (and a reranker on top) actually helps.
 
 ```mermaid
 flowchart LR
-    PDF[RBI / SEBI / Budget PDFs] --> P[Parse<br/>PyMuPDF, tables to markdown,<br/>OCR fallback]
+    PDF[SEBI / Budget / IRDAI PDFs] --> P[Parse<br/>PyMuPDF, tables to markdown,<br/>OCR fallback]
     P --> C[Clean<br/>drop Hindi lines, headers/footers,<br/>chart-label soup]
     C --> K[Chunk<br/>450 BGE tokens, sentence and<br/>table-row units, page spans]
     K --> B[(BM25 index<br/>finance-aware tokenizer)]

@@ -243,8 +243,11 @@ Also break results down by question type. Showing "BM25 wins on exact_term, vect
 9. Tech stack badges, license.
 
 ## 9. Deployment
-Decided: **Hugging Face Spaces (Docker, free CPU, 16 GB RAM)** running FastAPI + Streamlit in one container. Render/Railway free tiers (~512 MB RAM) can't hold the bge models + reranker.
-- Built: `scripts/deploy_space.py` stages tracked code + prebuilt indexes (~26 MB: chunks.jsonl, bm25.pkl, embedded Qdrant store) and uploads with `huggingface_hub` (`--dry-run` lists files; `--var` sets non-secret Space variables and refuses anything named *KEY*/*TOKEN*). The embedded Qdrant store ships inside the image, so Qdrant Cloud is optional (set `QDRANT_URL`), not required.
+Decided (2026-10-28): **Streamlit Community Cloud**, live at https://hybrid-rag-finance.streamlit.app/. Hugging Face Docker Spaces were the first choice but now need a PRO plan (create_repo returned 402), and the user wants free hosting. Render/Railway free tiers (~512 MB RAM) can't hold the bge models + reranker.
+- Built: with `API_URL=""` the Streamlit UI calls `answer()` in-process (no FastAPI). Prebuilt indexes (chunks.jsonl, bm25.pkl, embedded Qdrant store, ~66 MB) are committed because Community Cloud has no build step; it installs from `uv.lock`. Secrets: LLM_PROVIDER=gemini, LLM_MODEL=gemini-3.6-flash (free tier, no billing), RERANKER_MODEL=jinaai/jina-reranker-v1-turbo-en, RERANK_CANDIDATES=10. Measured live: hybrid_rerank ~11 s total (6 s retrieval, 5 s Gemini).
+- Adding documents: PDF into data/raw + row in sources.csv -> ingest -> index -> run_eval (check no regression) -> commit data/processed + push (Cloud redeploys). Only *.pdf is parsed.
+- Kept for a paid plan: `scripts/deploy_space.py` (HF Space). It stages tracked code + prebuilt indexes and uploads with `huggingface_hub` (`--dry-run` lists files; `--var` sets non-secret Space variables and refuses anything named *KEY*/*TOKEN*). The embedded Qdrant store ships inside the image, so Qdrant Cloud is optional (set `QDRANT_URL`), not required.
+- Earlier HF plan detail: `scripts/deploy_space.py` stages tracked code + prebuilt indexes (~26 MB: chunks.jsonl, bm25.pkl, embedded Qdrant store) and uploads with `huggingface_hub` (`--dry-run` lists files; `--var` sets non-secret Space variables and refuses anything named *KEY*/*TOKEN*). The embedded Qdrant store ships inside the image, so Qdrant Cloud is optional (set `QDRANT_URL`), not required.
 - Reranker latency is the deployment bottleneck: bge-reranker-base measured ~15 s for 30 × ~470-token pairs on CPU (not the ~0.3–1 s often quoted for short passages). For the public demo use Cohere Rerank, a faster local model, or fewer `RERANK_CANDIDATES`; pick using the eval's latency column.
 - Pre-ingest the corpus locally and push vectors to Qdrant Cloud, so the deployed app doesn't need to parse PDFs at boot.
 - Add a simple rate limit and keep API keys in environment secrets.
@@ -252,6 +255,9 @@ Decided: **Hugging Face Spaces (Docker, free CPU, 16 GB RAM)** running FastAPI +
 
 ## 10. Resume bullet (fill in your real numbers)
 > Built a hybrid-search RAG system over 50+ Indian regulatory PDFs (RBI, SEBI, Budget) using BM25 + dense retrieval with RRF and a cross-encoder reranker; improved Recall@5 from X% to Y% and faithfulness from A to B on a hand-verified 80-question golden set. Dockerized FastAPI service with cited answers, deployed on Hugging Face Spaces + Qdrant Cloud.
+
+Filled in (2026-10-28, real numbers; final wording in docs/launch_posts.md):
+> Built a hybrid-search RAG system over 27 Indian regulatory PDFs (SEBI, Union Budget, IRDAI, PRS; 6,100 chunks) combining BM25 and dense retrieval with weighted RRF and a cross-encoder reranker; raised Recall@5 from 62.5% (vector-only) to 86.7% and MRR from 0.50 to 0.71 on a 74-question golden set with a held-out test split. Cited answers with hallucinated-citation filtering; Dockerized FastAPI + Streamlit, deployed free on Streamlit Community Cloud with Gemini.
 
 ## 11. Interview questions to prepare
 - Why does BM25 beat embeddings on some queries? When does it lose?
