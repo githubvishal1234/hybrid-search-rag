@@ -6,7 +6,7 @@ the same in Git Bash, macOS and Linux).
 
 Live demo: https://hybrid-rag-finance.streamlit.app/
 Code: https://github.com/githubvishal1234/hybrid-search-rag
-Requirements: [BRD](BRD.md) (business) · [FRD](FRD.md) (functional)
+Requirements: [BRD](BRD.md) (business) · [FRD](FRD.md) (functional) · Improvement plan: [ROADMAP_TO_10.md](ROADMAP_TO_10.md)
 
 ---
 
