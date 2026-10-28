@@ -18,8 +18,11 @@ import hashlib
 import json
 import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
+
+import openai
 
 from hybrid_rag.config import ROOT, settings
 from hybrid_rag.generation import llm
@@ -59,6 +62,18 @@ def score(claims: list[dict] | None) -> float | None:
     return sum(c["supported"] for c in claims) / len(claims)
 
 
+def complete_with_backoff(user: str) -> str:
+    """Free-tier APIs (Gemini) cap requests per minute; wait it out instead of crashing."""
+    provider, model = settings.judge_provider, settings.judge_model
+    for wait in (30, 60, 120):
+        try:
+            return llm.complete(SYSTEM, user, provider, model)
+        except openai.RateLimitError:
+            print(f"\n  rate limited, waiting {wait}s")
+            time.sleep(wait)
+    return llm.complete(SYSTEM, user, provider, model)
+
+
 def judge_answer(answer: str, contexts: list[str], cache: dict) -> list[dict] | None:
     answer = CITATION.sub("", answer).strip()
     key = hashlib.sha1(json.dumps([judge_name(), answer, contexts]).encode()).hexdigest()
@@ -68,8 +83,7 @@ def judge_answer(answer: str, contexts: list[str], cache: dict) -> list[dict] | 
     user = f"Sources:\n\n{sources}\n\nAnswer to check:\n{answer}"
     claims = None
     for _ in range(2):  # one retry on unparseable output
-        provider, model = settings.judge_provider, settings.judge_model
-        claims = parse_claims(llm.complete(SYSTEM, user, provider, model))
+        claims = parse_claims(complete_with_backoff(user))
         if claims is not None:
             break
     if claims is not None:  # don't cache failures, so a later run retries them
@@ -122,7 +136,10 @@ def main() -> int:
         lines.append(f"| {mode} | {sum(scores) / len(scores):.3f} | {len(scores)} |")
     text = "\n".join(lines) + "\n"
     print(text)
-    out = gen_csv.with_name(gen_csv.name.replace("-generation.csv", "-faithfulness.md"))
+    suffix = "-faithfulness.md"
+    if judge_name() != f"{settings.llm_provider}:{settings.llm_model}":  # keep one report per judge
+        suffix = "-faithfulness-" + re.sub(r"[^\w.-]", "_", judge_name()) + ".md"
+    out = gen_csv.with_name(gen_csv.name.replace("-generation.csv", suffix))
     out.write_text(text, encoding="utf-8")
     print(f"saved {out}")
     return 0
