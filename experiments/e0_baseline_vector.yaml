@@ -1,0 +1,7 @@
+# E0: the naive-RAG baseline every later change is measured against.
+name: baseline_vector
+hypothesis: Dense retrieval alone misses exact identifiers (section numbers, form names) and returns number tables for figure questions.
+config:
+  mode: vector
+  dense_top_k: 30
+  context_top_n: 5

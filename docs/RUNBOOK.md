@@ -276,6 +276,19 @@ latency per mode, plus Recall@5 by question type. Useful flags:
 grid), `--limit 5` (smoke test).
 
 Tuning rule (keeps numbers honest): tune on `--split dev`, report on `--split test` once.
+The split is stored on each golden question (`split: dev|test`); `--split smoke` runs the 20
+CI questions.
+
+**Experiments (the newer runner, eval Step 4).** One YAML file per experiment in `experiments/`
+(`name`, `hypothesis`, `config` with RagConfig fields; change one thing at a time):
+```powershell
+python -m uv run python eval/run_experiment.py experiments/e0_baseline_vector.yaml
+python -m uv run python eval/run_experiment.py (Get-ChildItem experiments/*.yaml)  # whole ladder, dev
+```
+Each run gets `eval/results/<run_id>/` with `config.json` (every setting, git sha, golden-set
+hash), `per_question.jsonl` (gitignored), `summary.json` and `report.md`; several experiments in
+one call also write `eval/results/ladder-<split>-<time>.md`. Metrics: Hit@1/3/5/10, Recall@5/10,
+MRR, nDCG@10, by type and difficulty. Default split is dev.
 
 ### 7.2 Generation metrics (needs the LLM; slow on Ollama: ~3-4 hours for 4 modes x 74)
 

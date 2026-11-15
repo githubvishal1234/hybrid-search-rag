@@ -5,8 +5,10 @@ it needs; two for most multi_hop questions). A retrieved chunk satisfies a requi
 comes from that doc and its page span overlaps those pages. Working on pages, not chunk ids, is
 what lets the same golden set score any chunk size.
 
-- Recall@k:  share of requirements satisfied by the top k chunks. For a single-passage question
-             this is simply "is a relevant page in the top k?" (hit rate).
+- Hit@k:     1 if any requirement is satisfied in the top k, else 0. The most forgiving metric:
+             "did the LLM get at least something relevant?"
+- Recall@k:  share of requirements satisfied by the top k chunks. Equal to Hit@k for a
+             single-passage question; lower for a multi_hop one when only one passage is found.
 - MRR:       1 / rank of the first chunk that satisfies any requirement (0 if none in the list).
              Rewards putting the right chunk first, which matters because the LLM only sees ~5.
 - nDCG@k:    each requirement counts once, at the rank where it is first satisfied, discounted by
@@ -34,6 +36,10 @@ def recall_at(chunks: list[dict], relevant: list[dict], k: int) -> float:
     return len(found) / len(relevant)
 
 
+def hit_at(chunks: list[dict], relevant: list[dict], k: int) -> float:
+    return float(any(satisfied(c, relevant) for c in chunks[:k]))
+
+
 def first_hit_rank(chunks: list[dict], relevant: list[dict]) -> int | None:
     return next((r for r, c in enumerate(chunks, start=1) if satisfied(c, relevant)), None)
 
@@ -57,6 +63,7 @@ def ndcg_at(chunks: list[dict], relevant: list[dict], k: int) -> float:
 
 def retrieval_scores(chunks: list[dict], relevant: list[dict]) -> dict[str, float]:
     return {
+        **{f"hit@{k}": hit_at(chunks, relevant, k) for k in (1, 3, 5, 10)},
         "recall@5": recall_at(chunks, relevant, 5),
         "recall@10": recall_at(chunks, relevant, 10),
         "mrr": reciprocal_rank(chunks, relevant),

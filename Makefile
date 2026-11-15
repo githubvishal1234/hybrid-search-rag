@@ -1,4 +1,4 @@
-.PHONY: install data ingest index ask serve ui eval eval-dev eval-test eval-full judge golden-draft golden-review golden-add golden-check qdrant qdrant-down lint test
+.PHONY: install data ingest index ask serve ui eval eval-dev eval-test eval-full experiments judge golden-draft golden-review golden-add golden-check qdrant qdrant-down lint test
 
 install:
 	uv sync
@@ -32,6 +32,9 @@ eval-dev:
 
 eval-test:
 	uv run python eval/run_eval.py --split test --label test
+
+experiments:
+	uv run python eval/run_experiment.py $(wildcard experiments/*.yaml)
 
 judge:
 	uv run python eval/judge.py $(CSV)

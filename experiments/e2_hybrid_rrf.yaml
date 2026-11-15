@@ -1,0 +1,10 @@
+# E2: textbook Reciprocal Rank Fusion of the E0 and E1 lists (k=60, equal weights).
+name: hybrid_rrf
+hypothesis: Best of both retrievers. Risk seen on v1 probes - with k=60 a chunk ranked mediocre in both lists outscores one ranked first in only one.
+config:
+  mode: hybrid
+  dense_top_k: 30
+  bm25_top_k: 30
+  rrf_k: 60
+  rrf_bm25_weight: 1.0
+  context_top_n: 5

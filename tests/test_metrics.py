@@ -4,6 +4,7 @@ import pytest
 from metrics import (
     citation_correct,
     first_hit_rank,
+    hit_at,
     ndcg_at,
     percentile,
     recall_at,
@@ -29,6 +30,12 @@ def test_recall_counts_each_requirement():
     assert recall_at(ranking, TWO_HOP, 5) == 0.5  # found 1 of the 2 passages
     assert recall_at(ranking + [c("b.pdf", 10)], TWO_HOP, 10) == 1.0
     assert recall_at(ranking, SINGLE, 1) == 0.0
+
+
+def test_hit_needs_only_one_passage_unlike_recall():
+    ranking = [c("x.pdf", 1), c("a.pdf", 5)]
+    assert hit_at(ranking, TWO_HOP, 2) == 1.0 and recall_at(ranking, TWO_HOP, 2) == 0.5
+    assert hit_at(ranking, TWO_HOP, 1) == 0.0
 
 
 def test_mrr():

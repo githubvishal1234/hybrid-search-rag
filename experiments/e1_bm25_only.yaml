@@ -1,0 +1,7 @@
+# E1: change one thing from E0, the retriever.
+name: bm25_only
+hypothesis: Better than vector on exact_term and numeric (identifiers and figures match literally), worse on paraphrase.
+config:
+  mode: bm25
+  bm25_top_k: 30
+  context_top_n: 5

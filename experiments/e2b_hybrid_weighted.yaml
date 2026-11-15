@@ -1,0 +1,11 @@
+# E2b: change one thing from E2, the fusion settings, to the current production defaults
+# (rrf_k=10, BM25 weight 2.0, picked by run_eval.py --sweep on the v1 dev half).
+name: hybrid_weighted
+hypothesis: A smaller k lets a top-ranked chunk in one list win, and the extra BM25 weight trusts the stronger retriever on this corpus; beats E2.
+config:
+  mode: hybrid
+  dense_top_k: 30
+  bm25_top_k: 30
+  rrf_k: 10
+  rrf_bm25_weight: 2.0
+  context_top_n: 5

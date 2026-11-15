@@ -19,3 +19,6 @@ data/processed/qdrant/.lock
 
 # Word/Office lock files while a document is open
 ~$*
+
+# per-question experiment rows are large and reproducible; config, summary and report are kept
+eval/results/*/per_question.jsonl
