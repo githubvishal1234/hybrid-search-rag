@@ -21,12 +21,12 @@ COHERE_URL = "https://api.cohere.com/v2/rerank"
 
 
 @cache
-def _local_model() -> TextCrossEncoder:
-    return TextCrossEncoder(settings.reranker_model)
+def _local_model(name: str) -> TextCrossEncoder:
+    return TextCrossEncoder(name)
 
 
-def _local_scores(query: str, docs: list[str]) -> list[float]:
-    return [float(s) for s in _local_model().rerank(query, docs)]
+def _local_scores(query: str, docs: list[str], model: str | None = None) -> list[float]:
+    return [float(s) for s in _local_model(model or settings.reranker_model).rerank(query, docs)]
 
 
 def _cohere_scores(query: str, docs: list[str]) -> list[float]:
@@ -47,11 +47,21 @@ def _cohere_scores(query: str, docs: list[str]) -> list[float]:
     return scores
 
 
-def rerank(query: str, chunks: list[dict], top_n: int) -> list[dict]:
-    """Best top_n chunks by cross-encoder score, each with "rerank_score" added."""
+def rerank(
+    query: str,
+    chunks: list[dict],
+    top_n: int,
+    provider: str | None = None,
+    model: str | None = None,
+) -> list[dict]:
+    """Best top_n chunks by cross-encoder score, each with "rerank_score" added.
+    provider/model default to config.py (model applies to the local reranker only)."""
     if not chunks:
         return []
     docs = [passage_text(c) for c in chunks]  # same "title / section + text" the embedder saw
-    score = _cohere_scores if settings.reranker_provider == "cohere" else _local_scores
-    scored = [{**c, "rerank_score": s} for c, s in zip(chunks, score(query, docs), strict=True)]
+    if (provider or settings.reranker_provider) == "cohere":
+        scores = _cohere_scores(query, docs)
+    else:
+        scores = _local_scores(query, docs, model)
+    scored = [{**c, "rerank_score": s} for c, s in zip(chunks, scores, strict=True)]
     return sorted(scored, key=lambda c: c["rerank_score"], reverse=True)[:top_n]

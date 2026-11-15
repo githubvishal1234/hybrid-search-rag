@@ -276,6 +276,7 @@ Filled in (2026-10-28, real numbers; final wording in docs/launch_posts.md):
 - Never commit secrets or large PDFs.
 - Don't fake eval numbers; always run the eval script and report what it prints.
 - Prefer simple, readable code over clever abstractions.
+- For eval work, follow docs/EVAL_CLAUDE.md. Agreed changes to it (2026-11-15): extend the existing golden set and schema (add `answerable`, `difficulty`; test half = holdout; smoke set = 20 from dev); `chunk_size` is index-time, not in RagConfig, and E4 uses 256/350/450; RAGAS pinned 0.4.4 with the `ragas.metrics.collections` API, as an optional `eval` extra so the app never installs LangChain; Langfuse Cloud Hobby (SDK v5, `LANGFUSE_BASE_URL`), tracing only when keys are set; judge model and budget decided at Step 5 from measured tokens; CI gate runs on the committed index without the reranker; grow `eval/` in place rather than rewrite.
 
 ---
 

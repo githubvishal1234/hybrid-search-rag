@@ -2,37 +2,33 @@ import openai
 import pytest
 from fastapi.testclient import TestClient
 
+from hybrid_rag import pipeline
 from hybrid_rag.api import main
 from hybrid_rag.config import settings
 
-FAKE = {
-    "answer": "LTV is 75% [gold.pdf, p.3].",
-    "refused": False,
-    "citations": [{"doc": "gold.pdf", "page": "p.3", "chunk_id": "gold:0001", "snippet": "..."}],
-    "invalid_citations": [],
-    "uncited": False,
-    "retrieval_debug": {
-        "mode": "hybrid",
-        "chunks": [
-            {
-                "rank": 1,
-                "chunk_id": "gold:0001",
-                "vector_rank": 2,
-                "bm25_rank": 1,
-                "rrf_rank": None,
-                "rerank_score": None,
-                "score": 0.0325,
-            }
-        ],
-    },
-    "latency_ms": {"retrieve": 20, "generate": 900, "total": 920},
+GOLD = {
+    "chunk_id": "gold:0001",
+    "file_name": "gold.pdf",
+    "title": "Gold loans",
+    "page_start": 3,
+    "page_end": 3,
+    "section_heading": "",
+    "text": "LTV shall not exceed 75%.",
+    "score": 0.0325,
+    "ranks": {"vector": 2, "bm25": 1},
 }
 
 
 @pytest.fixture
 def client(monkeypatch):
+    # The real run_rag -> to_response path, with retrieval and the LLM faked.
     main._hits.clear()
-    monkeypatch.setattr(main, "answer", lambda q, mode: FAKE)
+    monkeypatch.setattr(pipeline, "retrieve", lambda *a, **kw: [GOLD])
+    monkeypatch.setattr(
+        pipeline.llm,
+        "complete_with_usage",
+        lambda *a: ("LTV is 75% [1].", {"input_tokens": 120, "output_tokens": 8}),
+    )
     return TestClient(main.app)  # no `with`: skips the lifespan warm-up (no models in tests)
 
 
@@ -40,8 +36,11 @@ def test_query_returns_the_contract(client):
     r = client.post("/query", json={"question": "What is the LTV cap?", "mode": "hybrid"})
     assert r.status_code == 200
     body = r.json()
+    assert body["answer"] == "LTV is 75% [gold.pdf, p.3]."
     assert body["citations"][0]["page"] == "p.3"
     assert body["retrieval_debug"]["chunks"][0]["bm25_rank"] == 1
+    assert body["tokens"] == {"input_tokens": 120, "output_tokens": 8}
+    assert set(body["latency_ms"]) == {"retrieve", "generate", "total"}
 
 
 @pytest.mark.parametrize(
@@ -59,10 +58,10 @@ def test_rate_limit(client, monkeypatch):
 
 
 def test_llm_down_is_a_503_not_a_500(client, monkeypatch):
-    def down(q, mode):
+    def down(q, config):
         raise openai.APIConnectionError(request=None)
 
-    monkeypatch.setattr(main, "answer", down)
+    monkeypatch.setattr(main, "run_rag", down)
     r = client.post("/query", json={"question": "LTV cap?"})
     assert r.status_code == 503 and "unreachable" in r.json()["detail"]
 

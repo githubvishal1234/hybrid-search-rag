@@ -26,8 +26,8 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 
 from hybrid_rag.api.schemas import Health, IngestStatus, QueryRequest, QueryResponse
 from hybrid_rag.config import settings
-from hybrid_rag.generation.answer import answer
 from hybrid_rag.indexing import bm25_index, vector_store
+from hybrid_rag.pipeline import RagConfig, run_rag
 from hybrid_rag.retrieval.retriever import retrieve
 
 log = logging.getLogger("hybrid_rag.api")
@@ -75,7 +75,7 @@ def query(req: QueryRequest, request: Request) -> dict:
         raise HTTPException(503, "indexes are being rebuilt; try again in a few minutes")
     request_id = uuid.uuid4().hex[:8]
     try:
-        res = answer(req.question, req.mode)
+        result = run_rag(req.question, RagConfig(mode=req.mode))
     except (openai.APIConnectionError, anthropic.APIConnectionError) as e:
         log.error(json.dumps({"event": "llm_unreachable", "id": request_id, "error": str(e)}))
         raise HTTPException(503, f"LLM ({settings.llm_provider}) is unreachable") from e
@@ -89,14 +89,15 @@ def query(req: QueryRequest, request: Request) -> dict:
                 "event": "query",
                 "id": request_id,
                 "mode": req.mode,
-                "latency_ms": res["latency_ms"],
-                "n_citations": len(res["citations"]),
-                "invalid_citations": len(res["invalid_citations"]),
-                "refused": res["refused"],
+                "latency_ms": result.latency_ms,  # every stage, not just the response's three
+                "tokens": result.tokens.model_dump(),
+                "n_citations": len(result.citations),
+                "invalid_citations": len(result.invalid_citations),
+                "refused": result.refused,
             }
         )
     )
-    return res
+    return result.to_response()
 
 
 @app.get("/health", response_model=Health)

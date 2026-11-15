@@ -1,4 +1,4 @@
-"""Retrieve -> prompt -> LLM -> validated, cited answer.
+"""Citation validation for generated answers (the pipeline itself is hybrid_rag.pipeline).
 
 Citation check: the model cites sources by number. Numbers that point to a source we actually
 gave it become "[file_name, p.X]"; any other number is a hallucinated citation, so it is removed
@@ -6,10 +6,6 @@ from the answer and reported in `invalid_citations`.
 """
 
 import re
-import time
-
-from hybrid_rag.generation import llm, prompts
-from hybrid_rag.retrieval.retriever import Mode, retrieve
 
 CITATION = re.compile(r"\[(\d+)\]")
 
@@ -46,40 +42,9 @@ def resolve_citations(raw: str, chunks: list[dict]) -> tuple[str, list[dict], li
     return text, citations, invalid
 
 
-def answer(question: str, mode: Mode = "hybrid") -> dict:
-    t0 = time.perf_counter()
-    chunks = retrieve(question, mode)
-    t1 = time.perf_counter()
-    raw = llm.complete(prompts.SYSTEM, prompts.user_prompt(question, chunks))
-    t2 = time.perf_counter()
+def answer(question: str, mode: str = "hybrid") -> dict:
+    """/query-shaped dict for eval/run_eval.py, which Step 4 of docs/EVAL_CLAUDE.md replaces.
+    New code calls hybrid_rag.pipeline.run_rag directly."""
+    from hybrid_rag.pipeline import RagConfig, run_rag  # the pipeline imports this module
 
-    text, citations, invalid = resolve_citations(raw, chunks)
-    refused = prompts.REFUSAL.lower().rstrip(".") in raw.lower()
-    return {
-        "answer": text,
-        "refused": refused,
-        "citations": citations,
-        "invalid_citations": invalid,
-        "uncited": not refused and not citations,  # answered without grounding: flag it
-        "retrieval_debug": {
-            "mode": mode,
-            # Per context chunk: where each retriever ranked it (None = not in its top-k).
-            "chunks": [
-                {
-                    "rank": i,
-                    "chunk_id": c["chunk_id"],
-                    "vector_rank": c["ranks"].get("vector"),
-                    "bm25_rank": c["ranks"].get("bm25"),
-                    "rrf_rank": c["ranks"].get("rrf"),  # only in hybrid_rerank
-                    "rerank_score": c.get("rerank_score"),
-                    "score": round(c["score"], 4),
-                }
-                for i, c in enumerate(chunks, start=1)
-            ],
-        },
-        "latency_ms": {
-            "retrieve": round((t1 - t0) * 1000),
-            "generate": round((t2 - t1) * 1000),
-            "total": round((t2 - t0) * 1000),
-        },
-    }
+    return run_rag(question, RagConfig(mode=mode)).to_response()

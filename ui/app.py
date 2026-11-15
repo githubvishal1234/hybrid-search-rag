@@ -50,10 +50,10 @@ def health() -> dict | None:
 def ask(question: str, mode: str) -> dict:
     """The /query response, from the API or computed here. Errors stop the page with a message."""
     if IN_PROCESS:
-        from hybrid_rag.generation.answer import answer
+        from hybrid_rag.pipeline import RagConfig, run_rag
 
         try:
-            return answer(question, mode)
+            return run_rag(question, RagConfig(mode=mode)).to_response()
         except Exception as e:  # LLM quota/outage etc.: show it instead of a stack trace
             st.error(f"{settings.llm_provider} failed: {e}")
             st.stop()
@@ -115,6 +115,9 @@ if st.button("Ask", type="primary", disabled=len(question.strip()) < 3):
     a.metric("Retrieval", f"{ms['retrieve']:,} ms")
     b.metric("Generation", f"{ms['generate']:,} ms")
     c.metric("Total", f"{ms['total']:,} ms")
+    tokens = res.get("tokens") or {}
+    if tokens.get("input_tokens") is not None:
+        st.caption(f"LLM tokens: {tokens['input_tokens']:,} in · {tokens['output_tokens']:,} out")
 
     if res["citations"]:
         st.subheader("Sources")

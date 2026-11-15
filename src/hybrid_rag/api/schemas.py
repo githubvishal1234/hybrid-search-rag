@@ -1,8 +1,9 @@
 """Request/response models. They are the API contract (and what /docs shows), so the response
-mirrors answer()'s dict exactly; FastAPI validates every response against them."""
+mirrors RagResult.to_response() exactly; FastAPI validates every response against them."""
 
 from pydantic import BaseModel, Field
 
+from hybrid_rag.pipeline import Citation, Usage
 from hybrid_rag.retrieval.retriever import Mode
 
 
@@ -11,13 +12,6 @@ class QueryRequest(BaseModel):
         min_length=3, max_length=1000, examples=["What does section 148A provide?"]
     )
     mode: Mode = "hybrid"
-
-
-class Citation(BaseModel):
-    doc: str
-    page: str = Field(examples=["p.12-13"])
-    chunk_id: str
-    snippet: str
 
 
 class ChunkDebug(BaseModel):
@@ -51,6 +45,7 @@ class QueryResponse(BaseModel):
     uncited: bool = Field(description="answered without citing anything; treat as unverified")
     retrieval_debug: RetrievalDebug
     latency_ms: Latency
+    tokens: Usage = Field(description="LLM input/output tokens; null if the provider didn't say")
 
 
 class Health(BaseModel):

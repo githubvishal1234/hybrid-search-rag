@@ -14,7 +14,7 @@ import anthropic
 import openai
 
 from hybrid_rag.config import settings
-from hybrid_rag.generation.answer import answer
+from hybrid_rag.pipeline import RagConfig, run_rag
 from hybrid_rag.retrieval.retriever import MODES, retrieve
 
 
@@ -40,7 +40,7 @@ def main() -> None:
         print_ranking(args.question, args.mode)
         return
     try:
-        res = answer(args.question, args.mode)
+        res = run_rag(args.question, RagConfig(mode=args.mode)).to_response()
     except (openai.APIConnectionError, anthropic.APIConnectionError):
         hint = "start it with `ollama serve`" if settings.llm_provider == "ollama" else "check it"
         sys.exit(f"Can't reach the {settings.llm_provider} LLM; {hint} (or set LLM_PROVIDER).")
@@ -56,7 +56,8 @@ def main() -> None:
     if res["uncited"]:
         print("  ! answer has no citations; treat it as unverified")
     timings = " | ".join(f"{stage} {ms} ms" for stage, ms in res["latency_ms"].items())
-    print(f"\n  {timings}")
+    t = res["tokens"]
+    print(f"\n  {timings} | tokens {t['input_tokens']} in, {t['output_tokens']} out")
 
 
 if __name__ == "__main__":

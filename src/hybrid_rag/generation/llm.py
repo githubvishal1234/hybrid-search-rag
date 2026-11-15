@@ -24,6 +24,14 @@ def _openai_compatible(provider: str) -> openai.OpenAI:
 
 
 def complete(system: str, user: str, provider: str | None = None, model: str | None = None) -> str:
+    return complete_with_usage(system, user, provider, model)[0]
+
+
+def complete_with_usage(
+    system: str, user: str, provider: str | None = None, model: str | None = None
+) -> tuple[str, dict[str, int | None]]:
+    """(text, {"input_tokens", "output_tokens"}) as reported by the provider; a count is None
+    if the provider didn't report it."""
     provider = provider or settings.llm_provider
     model = model or settings.llm_model
     if provider == "anthropic":
@@ -34,7 +42,11 @@ def complete(system: str, user: str, provider: str | None = None, model: str | N
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        return "".join(b.text for b in resp.content if b.type == "text")
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        return text, {
+            "input_tokens": resp.usage.input_tokens,
+            "output_tokens": resp.usage.output_tokens,
+        }
 
     resp = _openai_compatible(provider).chat.completions.create(
         model=model,
@@ -42,4 +54,8 @@ def complete(system: str, user: str, provider: str | None = None, model: str | N
         temperature=0,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return resp.choices[0].message.content or ""
+    usage = resp.usage
+    return resp.choices[0].message.content or "", {
+        "input_tokens": usage.prompt_tokens if usage else None,
+        "output_tokens": usage.completion_tokens if usage else None,
+    }

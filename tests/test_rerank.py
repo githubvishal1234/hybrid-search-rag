@@ -12,7 +12,7 @@ def chunk(i: str) -> dict:
 
 def test_rerank_orders_by_cross_encoder_score(monkeypatch):
     monkeypatch.setattr(settings, "reranker_provider", "local")
-    monkeypatch.setattr(rerank_mod, "_local_scores", lambda q, docs: [0.1, 2.5, -1.0])
+    monkeypatch.setattr(rerank_mod, "_local_scores", lambda q, docs, model=None: [0.1, 2.5, -1.0])
     out = rerank_mod.rerank("q", [chunk("a"), chunk("b"), chunk("c")], top_n=2)
     assert [c["chunk_id"] for c in out] == ["b", "a"]
     assert out[0]["rerank_score"] == 2.5
@@ -41,7 +41,7 @@ def test_cohere_scores_are_mapped_back_by_index(monkeypatch):
 def test_hybrid_rerank_reranks_top_fused_candidates(monkeypatch):
     seen = {}
 
-    def fake_rerank(query, candidates, top_n):
+    def fake_rerank(query, candidates, top_n, provider=None, model=None):
         seen["candidates"] = candidates
         best_last = [{**c, "rerank_score": float(i)} for i, c in enumerate(candidates)]
         return best_last[::-1][:top_n]

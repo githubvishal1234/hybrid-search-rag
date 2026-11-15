@@ -5,6 +5,8 @@ Sources are numbered [1]..[n] and the model cites by number. Asking a model to r
 check, and answer.py maps it back to file + page and drops any number that wasn't in the context.
 """
 
+from typing import Literal
+
 REFUSAL = "I couldn't find this in the documents."
 
 SYSTEM = f"""You answer questions about Indian financial regulations and the Union Budget using \
@@ -16,6 +18,11 @@ Rules:
 - Quote figures, section numbers and dates exactly as written in the sources.
 - If the sources do not contain the answer, reply exactly: {REFUSAL}
 - Be concise: a few sentences or a short list."""
+
+# Versioned so an experiment can name the prompt it ran with (RagConfig.prompt_version).
+# Add "v2" here, never edit "v1" in place: old results must stay reproducible.
+SYSTEMS = {"v1": SYSTEM}
+PromptVersion = Literal["v1"]
 
 
 def format_sources(chunks: list[dict]) -> str:
