@@ -55,3 +55,26 @@ def test_unparseable_judge_output_is_retried_once_and_not_cached(fake_llm):
     assert judge.judge_answer("Some answer.", ["ctx"], {}) is None
     assert len(calls) == 2
     assert judge.load_cache() == {}
+
+
+def test_backoff_waits_out_rate_limits(monkeypatch):
+    import httpx
+    import openai
+
+    from hybrid_rag.generation import llm
+
+    req = httpx.Request("POST", "https://x")
+    replies = iter(
+        [openai.RateLimitError("429", response=httpx.Response(429, request=req), body=None)]
+    )
+
+    def fake_complete(*a):
+        err = next(replies, None)
+        if err:
+            raise err
+        return "ok"
+
+    waits = []
+    monkeypatch.setattr(llm, "complete", fake_complete)
+    monkeypatch.setattr(llm.time, "sleep", waits.append)
+    assert llm.complete_with_backoff("s", "u") == "ok" and waits == [30]

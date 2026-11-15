@@ -21,12 +21,16 @@ import json
 import sys
 from collections import Counter
 
+from pydantic import ValidationError
+
 from hybrid_rag.config import ROOT, settings
+
+sys.path.insert(0, str(ROOT / "eval"))
+from schema import TYPES, GoldenItem  # noqa: E402  (eval/ is not a package)
 
 DRAFT_PATH = ROOT / "eval" / "golden_set.draft.jsonl"
 GOLDEN_PATH = ROOT / "eval" / "golden_set.jsonl"
 DROPPED_PATH = ROOT / "eval" / "golden_set.dropped.jsonl"
-TYPES = ("exact_term", "paraphrase", "numeric", "multi_hop", "unanswerable")
 FIELDS = ("id", "question", "type", "expected_answer", "relevant", "origin")
 
 
@@ -53,27 +57,29 @@ def kept_pages() -> dict[str, set[int]]:
 
 
 def validate(item: dict, pages: dict[str, set[int]]) -> list[str]:
-    errors = [f"missing {k}" for k in FIELDS if k not in item]
-    if errors:
-        return errors
-    if item["type"] not in TYPES:
-        errors.append(f"type must be one of {TYPES}")
-    if not item["question"].strip():
-        errors.append("empty question")
-    if item["type"] == "unanswerable":
-        if item["relevant"]:
-            errors.append("unanswerable questions have no relevant pages")
-    else:
-        if not item["relevant"]:
-            errors.append("answerable questions need at least one relevant (doc, pages)")
-        if not item["expected_answer"].strip():
-            errors.append("answerable questions need an expected_answer")
-        for r in item["relevant"]:
-            if r["doc"] not in pages:
-                errors.append(f"unknown doc {r['doc']}")
-            elif bad := [p for p in r["pages"] if p not in pages[r["doc"]]]:
-                errors.append(f"{r['doc']}: pages {bad} not in the parsed corpus")
+    """Schema errors (eval/schema.py), then labels pointing at pages the corpus doesn't have."""
+    try:
+        golden = GoldenItem.model_validate(item)
+    except ValidationError as e:
+        return [f"{'.'.join(map(str, err['loc'])) or 'item'}: {err['msg']}" for err in e.errors()]
+    errors = []
+    for r in golden.relevant:
+        if r.doc not in pages:
+            errors.append(f"unknown doc {r.doc}")
+        elif bad := [p for p in r.pages if p not in pages[r.doc]]:
+            errors.append(f"{r.doc}: pages {bad} not in the parsed corpus")
     return errors
+
+
+def finish(item: dict, edited: bool) -> dict:
+    """The fields a reviewer adds when keeping a question."""
+    difficulty = ask("difficulty (easy/medium/hard)", item.get("difficulty", "medium"))
+    return {k: item[k] for k in FIELDS} | {
+        "answerable": item["type"] != "unanswerable",
+        "difficulty": difficulty,
+        "reviewed": True,
+        "edited": edited,
+    }
 
 
 def ask(prompt: str, default: str = "") -> str:
@@ -151,8 +157,7 @@ def review() -> None:
                 append_jsonl(DROPPED_PATH, {**item, "drop_reason": reason})
                 break
             if choice in ("k", "e"):
-                final = edit(item) if choice == "e" else item
-                final = {k: final[k] for k in FIELDS} | {"reviewed": True, "edited": choice == "e"}
+                final = finish(edit(item) if choice == "e" else item, edited=choice == "e")
                 if errors := validate(final, pages):
                     print("  ! " + "; ".join(errors) + " - try [e]dit again")
                     continue
@@ -176,7 +181,7 @@ def add() -> None:
         item = edit(
             {"id": f"h{n:03d}", "question": q, "type": "", "expected_answer": "", "relevant": []}
         )
-        item = {**item, "origin": "hand", "reviewed": True, "edited": False}
+        item = finish({**item, "origin": "hand"}, edited=False)
         if errors := validate(item, pages):
             print("  ! not saved: " + "; ".join(errors))
             n -= 1
@@ -203,6 +208,8 @@ def check() -> int:
     print(f"\n{len(items)} questions, {bad} invalid")
     print("  origin:   " + ", ".join(f"{o} {n} ({n / total:.0%})" for o, n in origins.items()))
     print("  reviewer: " + ", ".join(f"{r} {n}" for r, n in reviewers.items()))
+    levels = Counter(i.get("difficulty") for i in items)
+    print("  difficulty: " + ", ".join(f"{d} {n}" for d, n in sorted(levels.items(), key=str)))
     for t in TYPES:
         print(f"  {t:13} {types[t]:3}  ({types[t] / total:.0%})")
     return 1 if bad else 0

@@ -3,6 +3,11 @@
 
 uv run python scripts/build_golden_set.py            # ~70 drafts -> eval/golden_set.draft.jsonl
 uv run python scripts/build_golden_set.py --n 10     # quick trial
+# top up the types the set is short of, with a stronger free model:
+uv run python scripts/build_golden_set.py --mix multi_hop=10 exact_term=8 --provider gemini
+    --model gemini-3.5-flash-lite
+
+Runs append to the draft file with new ids, so drafts already reviewed keep theirs.
 
 How it works:
 - Chunks are sampled across documents, weighted by sqrt(chunk count) so the 1,100-chunk mutual
@@ -151,12 +156,32 @@ def label(chunks: list[dict]) -> list[dict]:
     ]
 
 
-def draft_one(qtype: str, sources: list[dict]) -> dict | None:
+def parse_mix(pairs: list[str]) -> list[str]:
+    """["multi_hop=10", "exact_term=8"] -> 10 x multi_hop + 8 x exact_term."""
+    plan = []
+    for pair in pairs:
+        qtype, _, n = pair.partition("=")
+        if qtype not in MIX or not n.isdigit():
+            raise SystemExit(f"bad --mix entry {pair!r}: use type=count, types {list(MIX)}")
+        plan += [qtype] * int(n)
+    return plan
+
+
+def next_id(paths: list[Path]) -> int:
+    """First free dNNN number across drafts, golden set and dropped drafts."""
+    ids = [0]
+    for path in filter(Path.exists, paths):
+        with path.open(encoding="utf-8") as f:
+            ids += [int(m.group(1)) for m in re.finditer(r'"id": "d(\d+)"', f.read())]
+    return max(ids) + 1
+
+
+def draft_one(qtype: str, sources: list[dict], provider: str, model: str) -> dict | None:
     names = "AB" if len(sources) == 2 else "A"
     passages = "\n\n".join(passage_block(n, c) for n, c in zip(names, sources, strict=True))
     user = f"{passages}\n\nTask: {TYPE_RULES[qtype]}\n\nReply as JSON: {FORMAT}"
     for _ in range(2):  # one retry if the JSON is broken or the draft doesn't fit its type
-        out = parse_json(llm.complete(SYSTEM, user))
+        out = parse_json(llm.complete_with_backoff(SYSTEM, user, provider, model))
         if out and out.get("skip"):
             return None
         if out and out.get("question") and out.get("answer") and fits_type(qtype, out):
@@ -169,8 +194,15 @@ def main() -> int:
     p.add_argument("--n", type=int, default=70, help="number of drafts to aim for")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--out", type=Path, default=DRAFT_PATH)
+    p.add_argument("--mix", nargs="+", metavar="TYPE=N", help="exact counts instead of --n")
+    p.add_argument("--provider", default=settings.llm_provider)
+    p.add_argument("--model", default=settings.llm_model)
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
+    eval_dir = ROOT / "eval"
+    first_id = next_id(
+        [args.out, eval_dir / "golden_set.jsonl", eval_dir / "golden_set.dropped.jsonl"]
+    )
 
     rng = random.Random(args.seed)
     chunks = load_chunks()
@@ -178,13 +210,14 @@ def main() -> int:
     for c in chunks:
         by_doc.setdefault(c["doc_id"], []).append(c)
 
-    queue = type_plan(args.n)
+    queue = parse_mix(args.mix) if args.mix else type_plan(args.n)
+    target = len(queue)
     rng.shuffle(queue)
     used: set[str] = set()  # chunks already tried, so a failed chunk isn't drawn again
     n_drafts = attempts = 0
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("w", encoding="utf-8") as f:
-        while queue and attempts < 3 * args.n:
+    with args.out.open("a", encoding="utf-8") as f:
+        while queue and attempts < 3 * target:
             attempts += 1
             qtype = queue.pop(0)
             doc_id = sample_docs(chunks, 1, rng)[0]
@@ -195,7 +228,7 @@ def main() -> int:
                 sources = sources + [other] if other else []
             used.update(c["chunk_id"] for c in sources)
 
-            out = draft_one(qtype, sources) if sources else None
+            out = draft_one(qtype, sources, args.provider, args.model) if sources else None
             if out is None:
                 queue.append(qtype)  # try this type again later with another chunk
                 print(f"[{attempts}] {qtype:12} no usable draft, re-queued")
@@ -203,18 +236,18 @@ def main() -> int:
             n_drafts += 1
             unanswerable = qtype == "unanswerable"
             draft = {
-                "id": f"d{n_drafts:03d}",
+                "id": f"d{first_id + n_drafts - 1:03d}",
                 "question": out["question"].strip(),
                 "type": qtype,
                 "expected_answer": "" if unanswerable else str(out["answer"]).strip(),
                 "relevant": [] if unanswerable else label(sources),
                 "source_chunks": [c["chunk_id"] for c in sources],  # for the reviewer only
                 "origin": "llm_draft",
-                "drafted_by": f"{settings.llm_provider}:{settings.llm_model}",
+                "drafted_by": f"{args.provider}:{args.model}",
             }
             f.write(json.dumps(draft, ensure_ascii=False) + "\n")
             f.flush()  # a long run that gets interrupted keeps what it has
-            print(f"[{attempts}] {qtype:12} {n_drafts}/{args.n}: {draft['question'][:80]}")
+            print(f"[{attempts}] {qtype:12} {n_drafts}/{target}: {draft['question'][:80]}")
 
     print(f"\nwrote {n_drafts} drafts ({attempts} attempts) to {args.out}")
     print("Next: uv run python scripts/review_golden_set.py")

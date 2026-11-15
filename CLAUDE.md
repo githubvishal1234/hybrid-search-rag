@@ -198,7 +198,7 @@ Mix of question types (tag each one):
 Draft questions with an LLM (`build_golden_set.py` samples chunks and asks for Q/A pairs), then **review and fix every one by hand**. Say this in interviews.
 
 Decided rules:
-- Schema as built: `{"id", "question", "type", "expected_answer", "relevant": [{"doc", "pages"}], "origin": "llm_draft"|"hand", "reviewed", "edited"}`. `relevant` is a list so multi_hop can span two documents; unanswerable has `relevant: []`.
+- Schema as built (`eval/schema.py`, pydantic `GoldenItem`, validated by a test on the real file): `{"id", "question", "type", "expected_answer", "relevant": [{"doc", "pages"}], "answerable", "difficulty": "easy"|"medium"|"hard", "origin": "llm_draft"|"claude_written"|"hand", "reviewed", "edited"}`. Difficulty rubric is in schema.py; the 74 v1 rows were labelled by Claude (2026-11-15). `relevant` is a list so multi_hop can span two documents; unanswerable has `relevant: []`.
 - Workflow: `build_golden_set.py` drafts (sqrt-weighted doc sampling, per-type prompts, auto-rejects numeric answers without digits / exact_term questions without an identifier / TOC and blank-form chunks) -> `review_golden_set.py` keep/edit/drop (drop reasons logged) -> `--add` for hand-written -> `--check` validates pages against the parsed corpus.
 - Relevance labels are `(doc, page)` pairs, never chunk ids, so chunk-size experiments stay comparable.
 - ~30% of questions written by hand from the PDFs without looking at chunks (limits leakage toward our own chunker).

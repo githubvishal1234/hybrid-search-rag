@@ -1,7 +1,22 @@
+import json
 import random
+from collections import Counter
 
-from build_golden_set import fits_type, label, parse_json, sample_docs, type_plan, usable
+import pytest
+from build_golden_set import (
+    fits_type,
+    label,
+    next_id,
+    parse_json,
+    parse_mix,
+    sample_docs,
+    type_plan,
+    usable,
+)
 from review_golden_set import validate
+from schema import TYPES, load_golden
+
+from hybrid_rag.config import ROOT
 
 PAGES = {"a.pdf": {1, 2, 3, 7}, "b.pdf": {10}}
 
@@ -13,7 +28,11 @@ def item(**kw) -> dict:
         "type": "numeric",
         "expected_answer": "75%",
         "relevant": [{"doc": "a.pdf", "pages": [3]}],
+        "answerable": True,
+        "difficulty": "easy",
         "origin": "llm_draft",
+        "reviewed": True,
+        "edited": False,
     }
     return base | kw
 
@@ -78,10 +97,38 @@ def test_label_keeps_one_requirement_per_source_chunk():
 
 def test_validate():
     assert validate(item(), PAGES) == []
-    assert validate(item(type="unanswerable", expected_answer="", relevant=[]), PAGES) == []
+    unanswerable = item(type="unanswerable", expected_answer="", relevant=[], answerable=False)
+    assert validate(unanswerable, PAGES) == []
     assert "unknown doc c.pdf" in validate(item(relevant=[{"doc": "c.pdf", "pages": [1]}]), PAGES)
     errors = validate(item(relevant=[{"doc": "a.pdf", "pages": [5]}]), PAGES)
     assert any("pages [5]" in e for e in errors)  # page 5 was dropped during cleaning
-    assert validate(item(type="unanswerable"), PAGES)  # unanswerable can't have pages
+    assert validate(item(type="unanswerable", answerable=False), PAGES)  # it can't have pages
+    assert validate({**unanswerable, "answerable": True}, PAGES)  # flag must match the type
+    assert validate(item(difficulty="trivial"), PAGES)
+    assert validate(item(reviwed=True), PAGES)  # misspelt field
     assert validate(item(relevant=[]), PAGES)  # answerable needs pages
     assert validate(item(type="trivia"), PAGES)
+
+
+def test_the_real_golden_set_is_valid_and_balanced():
+    items = load_golden(ROOT / "eval" / "golden_set.jsonl")  # raises on a bad row or dup id
+    types = Counter(i.type for i in items)
+    assert set(types) == set(TYPES)
+    assert all(n / len(items) <= 0.35 for n in types.values()), types  # no type dominates
+    assert types["unanswerable"] / len(items) >= 0.1  # enough to measure refusals
+    assert len({i.difficulty for i in items}) == 3
+
+
+def test_load_golden_rejects_duplicate_ids(tmp_path):
+    path = tmp_path / "g.jsonl"
+    path.write_text(2 * (json.dumps(item()) + "\n"), encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate id d001"):
+        load_golden(path)
+
+
+def test_top_up_runs_get_their_own_ids_and_exact_counts(tmp_path):
+    (tmp_path / "a.jsonl").write_text('{"id": "d070"}\n{"id": "c012"}\n', encoding="utf-8")
+    assert next_id([tmp_path / "a.jsonl", tmp_path / "missing.jsonl"]) == 71
+    assert parse_mix(["multi_hop=2", "exact_term=1"]) == ["multi_hop", "multi_hop", "exact_term"]
+    with pytest.raises(SystemExit):
+        parse_mix(["trivia=3"])

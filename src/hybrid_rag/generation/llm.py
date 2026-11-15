@@ -4,6 +4,7 @@ share the openai SDK with a different base_url; Anthropic uses its own SDK.
 `provider` / `model` default to the configured answering LLM; the eval's faithfulness judge
 passes its own so a stronger model can grade the answering model's output."""
 
+import time
 from functools import cache
 
 import anthropic
@@ -21,6 +22,20 @@ def _openai_compatible(provider: str) -> openai.OpenAI:
     if provider == "gemini":
         return openai.OpenAI(base_url=GEMINI_OPENAI_URL, api_key=settings.gemini_api_key)
     return openai.OpenAI(api_key=settings.openai_api_key)
+
+
+def complete_with_backoff(
+    system: str, user: str, provider: str | None = None, model: str | None = None
+) -> str:
+    """Free-tier APIs (Gemini: 15 requests/minute) rate-limit batch jobs; wait instead of crashing.
+    For offline scripts only, never the API path, where a user is waiting."""
+    for wait in (30, 60, 120):
+        try:
+            return complete(system, user, provider, model)
+        except openai.RateLimitError:
+            print(f"\n  rate limited, waiting {wait}s", flush=True)
+            time.sleep(wait)
+    return complete(system, user, provider, model)
 
 
 def complete(system: str, user: str, provider: str | None = None, model: str | None = None) -> str:
