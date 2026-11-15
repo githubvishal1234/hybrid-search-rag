@@ -14,7 +14,7 @@ from build_golden_set import (
     usable,
 )
 from review_golden_set import validate
-from schema import TYPES, load_golden
+from schema import TYPES, load_golden, pick_split
 
 from hybrid_rag.config import ROOT
 
@@ -30,6 +30,7 @@ def item(**kw) -> dict:
         "relevant": [{"doc": "a.pdf", "pages": [3]}],
         "answerable": True,
         "difficulty": "easy",
+        "split": "dev",
         "origin": "llm_draft",
         "reviewed": True,
         "edited": False,
@@ -106,6 +107,7 @@ def test_validate():
     assert validate({**unanswerable, "answerable": True}, PAGES)  # flag must match the type
     assert validate(item(difficulty="trivial"), PAGES)
     assert validate(item(reviwed=True), PAGES)  # misspelt field
+    assert validate(item(split="test", smoke=True), PAGES)  # smoke never comes from the holdout
     assert validate(item(relevant=[]), PAGES)  # answerable needs pages
     assert validate(item(type="trivia"), PAGES)
 
@@ -117,6 +119,19 @@ def test_the_real_golden_set_is_valid_and_balanced():
     assert all(n / len(items) <= 0.35 for n in types.values()), types  # no type dominates
     assert types["unanswerable"] / len(items) >= 0.1  # enough to measure refusals
     assert len({i.difficulty for i in items}) == 3
+    for t in TYPES:  # each type split about evenly between dev and the test holdout
+        dev = sum(i.type == t and i.split == "dev" for i in items)
+        test = sum(i.type == t and i.split == "test" for i in items)
+        assert abs(dev - test) <= 2, (t, dev, test)
+    smoke = [i for i in items if i.smoke]
+    assert len(smoke) == 20 and {i.type for i in smoke} == set(TYPES)
+
+
+def test_new_questions_go_to_the_half_short_of_their_type():
+    existing = [{"type": "numeric", "split": "dev"}, {"type": "paraphrase", "split": "test"}]
+    assert pick_split("numeric", existing) == "test"
+    assert pick_split("paraphrase", existing) == "dev"
+    assert pick_split("multi_hop", existing) == "dev"  # tie -> dev
 
 
 def test_load_golden_rejects_duplicate_ids(tmp_path):

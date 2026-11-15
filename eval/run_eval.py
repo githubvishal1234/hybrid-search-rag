@@ -12,7 +12,6 @@ Retrieval metrics are free and take minutes (the cross-encoder dominates), so tu
 
 import argparse
 import csv
-import hashlib
 import json
 import statistics
 import sys
@@ -48,19 +47,14 @@ def load_golden(path: Path) -> list[dict]:
 
 
 def split(questions: list[dict], which: str) -> list[dict]:
-    """Stratified, deterministic 50/50 dev/test split: within each question type, order by a hash
-    of the id and alternate. Choose settings on dev and report on test, so the reported numbers
-    aren't tuned on the questions that measure them."""
+    """The halves stored on each question (eval/schema.py): about 50/50 within each type. Choose
+    settings on dev and report on test, so the reported numbers aren't tuned on the questions
+    that measure them. "smoke" is the 20-question CI subset of dev."""
     if which == "all":
         return questions
-    by_type: dict[str, list[dict]] = defaultdict(list)
-    for q in questions:
-        by_type[q["type"]].append(q)
-    keep = set()
-    for group in by_type.values():
-        group.sort(key=lambda q: hashlib.md5(q["id"].encode()).hexdigest())
-        keep |= {q["id"] for i, q in enumerate(group) if (i % 2 == 0) == (which == "dev")}
-    return [q for q in questions if q["id"] in keep]
+    if which == "smoke":
+        return [q for q in questions if q.get("smoke")]
+    return [q for q in questions if q.get("split") == which]
 
 
 def mean(xs) -> float:
@@ -272,7 +266,7 @@ def main() -> int:
     p.add_argument("--generate", action="store_true", help="also generate answers (slow)")
     p.add_argument("--no-retrieval", action="store_true", help="skip retrieval metrics")
     p.add_argument("--limit", type=int, help="only the first N questions (smoke test)")
-    p.add_argument("--split", choices=["all", "dev", "test"], default="all")
+    p.add_argument("--split", choices=["all", "dev", "test", "smoke"], default="all")
     p.add_argument("--label", default="run")
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")

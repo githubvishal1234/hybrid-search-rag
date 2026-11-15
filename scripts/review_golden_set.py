@@ -26,7 +26,7 @@ from pydantic import ValidationError
 from hybrid_rag.config import ROOT, settings
 
 sys.path.insert(0, str(ROOT / "eval"))
-from schema import TYPES, GoldenItem  # noqa: E402  (eval/ is not a package)
+from schema import TYPES, GoldenItem, pick_split  # noqa: E402  (eval/ is not a package)
 
 DRAFT_PATH = ROOT / "eval" / "golden_set.draft.jsonl"
 GOLDEN_PATH = ROOT / "eval" / "golden_set.jsonl"
@@ -77,6 +77,7 @@ def finish(item: dict, edited: bool) -> dict:
     return {k: item[k] for k in FIELDS} | {
         "answerable": item["type"] != "unanswerable",
         "difficulty": difficulty,
+        "split": pick_split(item["type"], read_jsonl(GOLDEN_PATH)),
         "reviewed": True,
         "edited": edited,
     }
@@ -210,8 +211,13 @@ def check() -> int:
     print("  reviewer: " + ", ".join(f"{r} {n}" for r, n in reviewers.items()))
     levels = Counter(i.get("difficulty") for i in items)
     print("  difficulty: " + ", ".join(f"{d} {n}" for d, n in sorted(levels.items(), key=str)))
+    halves = Counter((i["type"], i.get("split")) for i in items)
+    smoke = Counter(i["type"] for i in items if i.get("smoke"))
+    print(f"  {'type':13} {'all':>3}         dev test smoke")
     for t in TYPES:
-        print(f"  {t:13} {types[t]:3}  ({types[t] / total:.0%})")
+        n = types[t]
+        line = f"  {t:13} {n:3}  ({n / total:3.0%})  {halves[t, 'dev']:3} {halves[t, 'test']:4}"
+        print(f"{line} {smoke[t]:5}")
     return 1 if bad else 0
 
 

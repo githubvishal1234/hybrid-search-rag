@@ -60,15 +60,18 @@ def test_percentile_nearest_rank():
     assert math.isnan(percentile([], 50))
 
 
-def test_split_is_stratified_disjoint_and_stable():
+def test_split_reads_the_stored_halves():
     from run_eval import split
 
-    qs = [{"id": f"q{i}", "type": t} for i in range(10) for t in ("numeric", "paraphrase")]
-    dev, test = split(qs, "dev"), split(qs, "test")
-    assert {q["id"] for q in dev}.isdisjoint({q["id"] for q in test})
-    assert len(dev) + len(test) == len(qs)
-    assert sum(q["type"] == "numeric" for q in dev) == 5  # each type split evenly
-    assert split(qs, "dev") == dev and split(qs, "all") == qs
+    qs = [
+        {"id": "a", "split": "dev", "smoke": True},
+        {"id": "b", "split": "dev"},
+        {"id": "c", "split": "test"},
+    ]
+    assert [q["id"] for q in split(qs, "dev")] == ["a", "b"]
+    assert [q["id"] for q in split(qs, "test")] == ["c"]
+    assert [q["id"] for q in split(qs, "smoke")] == ["a"]
+    assert split(qs, "all") == qs
 
 
 def test_generation_resumes_after_a_crash(tmp_path, monkeypatch):

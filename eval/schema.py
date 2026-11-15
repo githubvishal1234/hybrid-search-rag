@@ -35,6 +35,10 @@ class GoldenItem(BaseModel):
     relevant: list[Relevant]
     answerable: bool
     difficulty: Difficulty
+    # Stored, not recomputed, so adding questions never moves old ones between halves.
+    # dev: tune on it. test: the holdout, looked at only when reporting a finished phase.
+    split: Literal["dev", "test"]
+    smoke: bool = False  # in the 20-question CI subset (always from dev)
     origin: Literal["llm_draft", "claude_written", "hand"]
     reviewed: bool
     edited: bool
@@ -49,7 +53,15 @@ class GoldenItem(BaseModel):
             raise ValueError("answerable questions need relevant pages and an expected_answer")
         if not self.answerable and self.relevant:
             raise ValueError("unanswerable questions have no relevant pages")
+        if self.smoke and self.split != "dev":
+            raise ValueError("smoke questions come from dev, never the test holdout")
         return self
+
+
+def pick_split(qtype: str, existing: list[dict]) -> str:
+    """For a new question: the half with fewer questions of its type (tie -> dev)."""
+    n = {s: sum(q["type"] == qtype and q["split"] == s for q in existing) for s in ("dev", "test")}
+    return "dev" if n["dev"] <= n["test"] else "test"
 
 
 def load_golden(path: Path) -> list[GoldenItem]:
