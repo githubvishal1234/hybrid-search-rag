@@ -21,6 +21,11 @@ dependencies = [
     "uvicorn>=0.54.0",
 ]
 
+[project.optional-dependencies]
+eval = [
+    "ragas==0.4.4",
+]
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
@@ -46,3 +51,8 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["scripts", "eval"]  # lets tests import the scripts and eval helpers
+
+[tool.uv]
+# instructor (needed by ragas, eval extra only) caps jiter <0.15; openai 3.x needs >=0.15.
+# jiter is a JSON parser with a stable API, so we let instructor use the newer one.
+override-dependencies = ["jiter>=0.15"]

@@ -32,7 +32,7 @@ def fakes(monkeypatch):
         return [chunk(1, 3, {"vector": 2, "bm25": 1}), chunk(2, 9, {"bm25": 4}, rerank_score=1.5)]
 
     def fake_llm(system, user, provider, model):
-        seen.update(system=system, provider=provider, model=model)
+        seen.update(system=system, user=user, provider=provider, model=model)
         return seen.get("reply", "LTV is 75% [1]. Tenor 12 months [7]."), {
             "input_tokens": 300,
             "output_tokens": 12,
@@ -92,3 +92,9 @@ def test_retrieval_only_skips_the_llm(fakes):
 
 def test_to_response_matches_the_api_contract(fakes):
     QueryResponse.model_validate(pipeline.run_rag("q").to_response())
+
+
+def test_eval_can_rank_deeper_than_the_llm_sees(fakes):
+    r = pipeline.run_rag("q", pipeline.RagConfig(context_top_n=1), retrieve_n=2)
+    assert fakes["top_n"] == 2 and len(r.contexts) == 2  # both ranked, for Hit@k
+    assert "text of chunk 1" in fakes["user"] and "text of chunk 2" not in fakes["user"]

@@ -130,16 +130,25 @@ def _context(rank: int, c: dict) -> Context:
     )
 
 
-def run_rag(question: str, config: RagConfig | None = None, *, generate: bool = True) -> RagResult:
+def run_rag(
+    question: str,
+    config: RagConfig | None = None,
+    *,
+    generate: bool = True,
+    retrieve_n: int | None = None,
+) -> RagResult:
     """Retrieve -> prompt -> LLM -> validated, cited answer. generate=False stops after
-    retrieval (answer empty, no LLM call): what retrieval-only evals and CI need."""
+    retrieval (answer empty, no LLM call): what retrieval-only evals and CI need.
+
+    retrieve_n (eval only) ranks deeper than the LLM sees, so one call yields both Hit@10 and an
+    answer: contexts then holds retrieve_n chunks and the LLM got contexts[:context_top_n]."""
     config = config or RagConfig()
     timings: dict[str, int] = {}
     t0 = time.perf_counter()
-    chunks = retrieve(
+    ranked = retrieve(
         question,
         config.mode,
-        config.context_top_n,
+        max(retrieve_n or 0, config.context_top_n),
         dense_top_k=config.dense_top_k,
         bm25_top_k=config.bm25_top_k,
         rrf_k=config.rrf_k,
@@ -149,6 +158,7 @@ def run_rag(question: str, config: RagConfig | None = None, *, generate: bool = 
         reranker_model=config.reranker_model,
         timings=timings,
     )
+    chunks = ranked[: config.context_top_n]  # what the LLM sees
     t1 = time.perf_counter()
 
     text, citations, invalid, refused, usage = "", [], [], False, {}
@@ -171,7 +181,7 @@ def run_rag(question: str, config: RagConfig | None = None, *, generate: bool = 
         citations=citations,
         invalid_citations=invalid,
         uncited=generate and not refused and not citations,  # answered without grounding
-        contexts=[_context(i, c) for i, c in enumerate(chunks, start=1)],
+        contexts=[_context(i, c) for i, c in enumerate(ranked, start=1)],
         latency_ms={
             **timings,
             "retrieve": round((t1 - t0) * 1000),

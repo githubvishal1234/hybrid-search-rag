@@ -290,6 +290,25 @@ hash), `per_question.jsonl` (gitignored), `summary.json` and `report.md`; severa
 one call also write `eval/results/ladder-<split>-<time>.md`. Metrics: Hit@1/3/5/10, Recall@5/10,
 MRR, nDCG@10, by type and difficulty. Default split is dev.
 
+Answers and RAGAS (needs `python -m uv sync --extra eval` once; the judge needs its API key):
+```powershell
+python -m uv run python eval/run_experiment.py experiments/e2b_hybrid_weighted.yaml --generate --llm ollama:llama3.1 --judge gemini:gemini-3.5-flash-lite
+python -m uv run python eval/run_experiment.py experiments/e2b_hybrid_weighted.yaml --generate --llm ollama:llama3.1 --judge gemini:gemini-3.5-flash-lite --resume eval/results/<run_id>
+python -m uv run python eval/compare.py eval/results/<run_a> eval/results/<run_b>
+```
+Judge scores are cached in `eval/results/ragas_cache.jsonl` (re-runs are free); an interrupted
+run continues with `--resume`. Keep one judge for all experiments.
+
+**Free-tier judge: answer now, judge later.** Gemini's free tier allows 500 requests per day per
+model, and RAGAS needs ~10 per question, so a 4-mode ladder (~2,000 calls) takes ~4 days. Answer
+everything first with `--generate` and no `--judge` (Ollama, no limit), then each day:
+```powershell
+python -m uv run python eval/run_experiment.py --rejudge eval/results/<e0_run> eval/results/<e1_run> eval/results/<e2b_run> eval/results/<e3_run> --judge gemini:gemini-3.5-flash-lite
+```
+It skips everything already cached, stops cleanly when the daily quota runs out ("run the same
+command again tomorrow"), and rewrites each run's summary plus a new ladder table. Exit code 0
+means every answer is scored.
+
 ### 7.2 Generation metrics (needs the LLM; slow on Ollama: ~3-4 hours for 4 modes x 74)
 
 ```powershell
